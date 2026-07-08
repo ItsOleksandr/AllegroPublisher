@@ -5,7 +5,7 @@ namespace Allegro.Console;
 
 public class ProductParcer
 {
-    public async Task<IBrowserContext> CreateBrowserContext(bool headless)
+    public async Task<IBrowserContext> CreateBrowserContext()
     {
         var playwright = await Playwright.CreateAsync();
         var args = new List<string> 
@@ -13,12 +13,7 @@ public class ProductParcer
             "--disable-blink-features=AutomationControlled", 
             "--no-sandbox"
         };
-
-        if (!headless)
-        {
-            args.Add("--remote-debugging-port=9222");
-            args.Add("--remote-debugging-address=0.0.0.0");
-        }
+        
         string extensionPathVpn = Path.Combine(Directory.GetCurrentDirectory(),"Resources","nord_vpn");
         string extensionPathCaptcha = Path.Combine(Directory.GetCurrentDirectory(),"Resources","captcha");
         
@@ -26,41 +21,45 @@ public class ProductParcer
         args.Add($"--load-extension={extensionPathVpn},{extensionPathCaptcha}");
         var browser = await playwright.Chromium.LaunchPersistentContextAsync(Path.Combine(Directory.GetCurrentDirectory(),"Resources","PlaywrightData"), new BrowserTypeLaunchPersistentContextOptions()
         {
-            Headless = headless,
-            Args = args 
+            Headless = false,
+            Args = args ,
+            Env = new Dictionary<string, string>()
+            {
+                { "DISPLAY", "99" }
+            }
         });
         
         return browser;
     }
-    
-    public async Task<ParseResponse> Parse(string[] urls,bool isUserStarts,int startIndex = 0,bool loadLastSession = true)
+
+    public async Task<ParseResponse> NewParse(List<string> urls, bool isUserStarts,int startIndex = 0)
     {
-        var browser = await CreateBrowserContext(!isUserStarts);
+        return await FinishParse(new ParseResponse() {AllUrls = urls,CurrentIndexUrl = startIndex},isUserStarts); 
+    }
+    
+    /// <param name="response">Must be a new object as it uses a static set for <see cref="SaverExtensions.LastParse"/> and may throw exception when modifying a list</param>
+    public async Task<ParseResponse> FinishParse(ParseResponse response,bool isUserStarts)
+    {
+        var browser = await CreateBrowserContext();
         var page = await browser.NewPageAsync();
         
         ProductExtracter extracter = new ProductExtracter(page);
-        string pathForSaveSession = Path.Combine(Directory.GetCurrentDirectory(),"Resources","last_parse.txt");
-        var response = new ParseResponse();
-        if (loadLastSession)
-        {
-            response = LoadSession(pathForSaveSession);
-            startIndex = response.Products.Count-1;
-        }
         
-        for(int i = startIndex; i < urls.Length; i++)
+        for(; response.CurrentIndexUrl < response.AllUrls.Count; response.CurrentIndexUrl++)
         {
-            var url = urls[i];
+            var url = response.AllUrls[response.CurrentIndexUrl];
             ProductInfo product;
             System.Console.WriteLine($"Url: {url}\n");
             try
             {
-                product = await extracter.Extract(url,isUserStarts);
+                product = await extracter.Extract(url, isUserStarts);
             }
             catch (InvalidProductException e)
             {
                 response.BlackListUrls.Add(url);
                 System.Console.WriteLine($"Invalid product {e.Message}: {url}");
-                SaveSession(pathForSaveSession, response);
+                SaverExtensions.LastParse.Value = response;
+                SaverExtensions.LastParse.Write();
                 continue;
             }
             catch (ProductAlreadyHandledException)
@@ -73,28 +72,12 @@ public class ProductParcer
             }
             
             response.Products[product.Url] = product;
-            SaveSession(pathForSaveSession, response);
-            System.Console.WriteLine($"Handled {i} / {urls.Length}\n");
+            SaverExtensions.LastParse.Value = response;
+            SaverExtensions.LastParse.Write();
+            System.Console.WriteLine($"Handled {response.CurrentIndexUrl} / {response.AllUrls.Count}\n");
         }
         await browser.CloseAsync();
         return response;
     }
-    
-    public void SaveSession(string path, ParseResponse response)
-    {
-        var content = JsonSerializer.Serialize(response);
-        File.WriteAllText(path, content);
-    }
-    public ParseResponse LoadSession(string path)
-    {
-        var content = File.ReadAllText(path);
-        var response = JsonSerializer.Deserialize<ParseResponse>(content);
-        return response ?? new ParseResponse();
-    }
 }
 
-public class ParseResponse
-{
-    public List<string> BlackListUrls { get; set; } = new List<string>();
-    public Dictionary<string, ProductInfo> Products { get; set; } = new Dictionary<string, ProductInfo>();
-}

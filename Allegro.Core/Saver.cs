@@ -43,6 +43,7 @@ public static class SaverExtensions
     public static readonly Saver<Dictionary<string,ProductInfo>> Products = new Saver<Dictionary<string,ProductInfo>>("products_dictionary.txt");
     public static readonly Saver<CSVOptions> CSVOptions = new Saver<CSVOptions>("csv_options.txt");
     public static readonly Saver<AllenetCreditails> Creaditails = new Saver<AllenetCreditails>("creditials.txt");
+    public static readonly Saver<ParseResponse> LastParse = new Saver<ParseResponse>("last_parse.txt");
 
     public static readonly string ResourceDirectory;
 
