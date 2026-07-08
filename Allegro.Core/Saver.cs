@@ -10,23 +10,15 @@ public class Saver<T> where T : class
 
     public Saver(string fileName)
     {
-        _filePath = Path.Combine(Directory.GetCurrentDirectory(), "Resources", fileName);
+        _filePath = Path.Combine(SaverExtensions.ResourceDirectory, fileName);
         Value = Read();
         
     }
     
     public void Write()
     {
-        try
-        {
-            var content = JsonSerializer.Serialize(Value);
-            File.WriteAllText(_filePath, content);
-        }
-        catch(DirectoryNotFoundException)
-        {
-            Directory.CreateDirectory(Path.Combine(Directory.GetCurrentDirectory(), "Resources"));
-            Write();
-        }
+        var content = JsonSerializer.Serialize(Value);
+        File.WriteAllText(_filePath, content);
     }
 
     public T Read()
@@ -41,11 +33,6 @@ public class Saver<T> where T : class
             Value = Activator.CreateInstance<T>();
             return Value;
         }
-        catch (DirectoryNotFoundException)
-        {
-            Directory.CreateDirectory(Path.Combine(Directory.GetCurrentDirectory(), "Resources"));
-            return Read();
-        }
     }
 }
 
@@ -56,6 +43,16 @@ public static class SaverExtensions
     public static readonly Saver<Dictionary<string,ProductInfo>> Products = new Saver<Dictionary<string,ProductInfo>>("products_dictionary.txt");
     public static readonly Saver<CSVOptions> CSVOptions = new Saver<CSVOptions>("csv_options.txt");
     public static readonly Saver<AllenetCreditails> Creaditails = new Saver<AllenetCreditails>("creditials.txt");
-    
-    
+
+    public static readonly string ResourceDirectory;
+
+    static SaverExtensions()
+    {
+        string resourceDirectory = Path.Combine(Directory.GetCurrentDirectory(), "Resources");
+        ResourceDirectory = resourceDirectory;
+        if (!Directory.Exists(resourceDirectory))
+        {
+            Directory.CreateDirectory(resourceDirectory);
+        }
+    }
 }

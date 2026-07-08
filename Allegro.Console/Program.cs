@@ -1,10 +1,10 @@
 ﻿using Allegro.Core;
 using Allegro.Console;
 
-    CSVMaker.MakeCSV(SaverExtensions.Products.Value.Values.ToList(),SaverExtensions.CSVOptions.Value);
-    return;
 if (args.Contains("--rebuild-csv"))
 {
+    CSVMaker.MakeCSV(SaverExtensions.Products.Value.Values.ToList(),SaverExtensions.CSVOptions.Value);
+    return;
 }
 
 if (args.Contains("--configure-browser"))
