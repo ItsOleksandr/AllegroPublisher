@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 
 namespace Allegro.Core;
 
@@ -6,7 +7,7 @@ public class Saver<T> where T : class
 {
     public T Value { get; set; } 
 
-    public string _filePath { get; }
+    private string _filePath { get; }
 
     public Saver(string fileName)
     {
@@ -38,6 +39,28 @@ public class Saver<T> where T : class
 
 public static class SaverExtensions
 {
+    public static string ResourceDirectory => _resourceDirectory.Value;
+    private static readonly Lazy<string> _resourceDirectory = new Lazy<string>(() => 
+    {
+        var config = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory) 
+            .AddJsonFile("coresettings.json", optional: false, reloadOnChange: true)
+            .Build();
+        
+        string? path = config.GetSection("BaseDirectory").Value;
+        
+        if (string.IsNullOrEmpty(path))
+            throw new NullReferenceException(
+                "ResourcePath is null or empty in appsettings.json. Please set it to a valid path.");
+        
+        if (!Directory.Exists(path))
+        {
+            Directory.CreateDirectory(path);
+        }
+        
+        return path;
+    });
+    
     public static readonly Saver<List<string>> Urls = new Saver<List<string>>("urls.txt");
     public static readonly Saver<List<string>> UrlsBlackList = new Saver<List<string>>("urls_black_list.txt");
     public static readonly Saver<Dictionary<string,ProductInfo>> Products = new Saver<Dictionary<string,ProductInfo>>("products_dictionary.txt");
@@ -45,15 +68,4 @@ public static class SaverExtensions
     public static readonly Saver<AllenetCreditails> Creaditails = new Saver<AllenetCreditails>("creditials.txt");
     public static readonly Saver<ParseResponse> LastParse = new Saver<ParseResponse>("last_parse.txt");
 
-    public static readonly string ResourceDirectory;
-
-    static SaverExtensions()
-    {
-        string resourceDirectory = Path.Combine(Directory.GetCurrentDirectory(), "Resources");
-        ResourceDirectory = resourceDirectory;
-        if (!Directory.Exists(resourceDirectory))
-        {
-            Directory.CreateDirectory(resourceDirectory);
-        }
-    }
 }

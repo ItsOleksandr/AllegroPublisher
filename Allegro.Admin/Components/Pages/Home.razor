@@ -1,7 +1,20 @@
 ﻿@page "/"
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Allegro parser</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>Allegro parser</h1>
 
-Welcome to your new app.
+<h2>Last parsing:</h2>
+<h3>All: @_lastParsing.AllUrls.Count</h3>
+<h3>Success: @(_lastParsing.Products.Count)</h3>
+<h3>Failed / Invalid Urls: @_lastParsing.BlackListUrls.Count</h3>
+<h3>Last parse status: @(_lastParsing.AllUrls.Count - _lastParsing.CurrentIndexUrl - 1 == 0 ? "Success" : $"Failure on {_lastParsing.CurrentIndexUrl}")</h3>
+<a href="/products.csv">
+
+@code{
+    private ParseResponse _lastParsing = new ParseResponse();
+    protected override void OnParametersSet()
+    {
+        _lastParsing = SaverExtensions.LastParse.Value;
+    }
+}
