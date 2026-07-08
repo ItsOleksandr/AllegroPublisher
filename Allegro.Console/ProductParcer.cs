@@ -14,12 +14,12 @@ public class ProductParcer
             "--no-sandbox"
         };
         
-        string extensionPathVpn = Path.Combine(Directory.GetCurrentDirectory(),"Resources","nord_vpn");
-        string extensionPathCaptcha = Path.Combine(Directory.GetCurrentDirectory(),"Resources","captcha");
+        string extensionPathVpn = Path.Combine(SaverExtensions.ResourceDirectory,"nord_vpn");
+        string extensionPathCaptcha = Path.Combine(SaverExtensions.ResourceDirectory,"captcha");
         
         args.Add($"--disable-extensions-except={extensionPathVpn},{extensionPathCaptcha}");
         args.Add($"--load-extension={extensionPathVpn},{extensionPathCaptcha}");
-        var browser = await playwright.Chromium.LaunchPersistentContextAsync(Path.Combine(Directory.GetCurrentDirectory(),"Resources","PlaywrightData"), new BrowserTypeLaunchPersistentContextOptions()
+        var browser = await playwright.Chromium.LaunchPersistentContextAsync(Path.Combine(SaverExtensions.ResourceDirectory,"PlaywrightData"), new BrowserTypeLaunchPersistentContextOptions()
         {
             Headless = false,
             Args = args ,

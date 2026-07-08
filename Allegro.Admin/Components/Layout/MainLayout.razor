@@ -1,4 +1,6 @@
-﻿@inherits LayoutComponentBase
+﻿@using Allegro.Admin.Components.Shared
+@inherits LayoutComponentBase
+
 
 <div class="page">
     <main>
@@ -13,3 +15,5 @@
     <a href="" class="reload">Reload</a>
     <a class="dismiss">🗙</a>
 </div>
+
+<Toast @rendermode="InteractiveServer"/>

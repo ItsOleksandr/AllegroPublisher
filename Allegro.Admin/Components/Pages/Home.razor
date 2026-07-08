@@ -1,15 +1,18 @@
 ﻿@page "/"
+@inject ToastService toastService
+@rendermode InteractiveServer
 
 <PageTitle>Allegro parser</PageTitle>
 
 <h1>Allegro parser</h1>
+
 
 <h2>Last parsing:</h2>
 <h3>All: @_lastParsing.AllUrls.Count</h3>
 <h3>Success: @(_lastParsing.Products.Count)</h3>
 <h3>Failed / Invalid Urls: @_lastParsing.BlackListUrls.Count</h3>
 <h3>Last parse status: @(_lastParsing.AllUrls.Count - _lastParsing.CurrentIndexUrl - 1 == 0 ? "Success" : $"Failure on {_lastParsing.CurrentIndexUrl}")</h3>
-<a href="/products.csv">
+<a href="/@CSVMaker.FileName" download="@CSVMaker.FileName">Download products.csv</a>
 
 @code{
     private ParseResponse _lastParsing = new ParseResponse();

@@ -7,11 +7,11 @@ public class Saver<T> where T : class
 {
     public T Value { get; set; } 
 
-    private string _filePath { get; }
+    public string FilePath { get; }
 
     public Saver(string fileName)
     {
-        _filePath = Path.Combine(SaverExtensions.ResourceDirectory, fileName);
+        FilePath = Path.Combine(SaverExtensions.ResourceDirectory, fileName);
         Value = Read();
         
     }
@@ -19,14 +19,14 @@ public class Saver<T> where T : class
     public void Write()
     {
         var content = JsonSerializer.Serialize(Value);
-        File.WriteAllText(_filePath, content);
+        File.WriteAllText(FilePath, content);
     }
 
     public T Read()
     {
         try
         {
-            var content = File.ReadAllText(_filePath);
+            var content = File.ReadAllText(FilePath);
             return JsonSerializer.Deserialize<T>(content) ?? throw new JsonException("Invalid JSON");
         }
         catch (Exception e) when (e is JsonException or FileNotFoundException)

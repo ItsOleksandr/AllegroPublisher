@@ -5,6 +5,8 @@ namespace Allegro.Core;
 
 public static class CSVMaker
 {
+    public const string FileName = "products.csv"; 
+    
     public static void MakeCSV(List<ProductInfo> products, CSVOptions options)
     {
         var csvOptions = SaverExtensions.CSVOptions.Value;
@@ -20,7 +22,7 @@ public static class CSVMaker
         filteredProducts.ForEach(x=>x.Price *= csvOptions.MultiplierPrice);
     
         var result = CSVMaker.GetCSV(filteredProducts);
-        File.WriteAllText(Path.Combine(Directory.GetCurrentDirectory(),"Resources","products.csv"),result);
+        File.WriteAllText(Path.Combine(SaverExtensions.ResourceDirectory,FileName),result);
     }
     
     private static string GetCSV(List<ProductInfo> products)
