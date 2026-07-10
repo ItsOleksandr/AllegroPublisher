@@ -75,36 +75,36 @@ public class ProductExtracter
         }
         catch (Exception e)
         {
-            
-            System.Console.WriteLine(e);
-            if (isUserStarts)
-            {
-                do
-                {
-                    System.Console.WriteLine("Skip (S) / Delete (D) / Again (A) / Break (B)");
-                    var entered = System.Console.ReadLine()?.Trim() ?? "";
-                    if (entered == "s")
-                    {
-                        throw new ProductAlreadyHandledException();
-                    }
-                    else if (entered == "d")
-                    {
-                        throw new InvalidProductException();
-                    }
-                    else if (entered == "a")
-                    {
-                        return await Extract(url,isUserStarts);
-                    }
-                    else if (entered == "b")
-                    {
-                        throw new ParserException();
-                    }
-                } while (true);
-            }
-            else
-            {
-                throw new ProductAlreadyHandledException();
-            }
+            throw new ProductAlreadyHandledException();
+            // System.Console.WriteLine(e);
+            // if (isUserStarts)
+            // {
+            //     do
+            //     {
+            //         System.Console.WriteLine("Skip (S) / Delete (D) / Again (A) / Break (B)");
+            //         var entered = System.Console.ReadLine()?.Trim() ?? "";
+            //         if (entered == "s")
+            //         {
+            //             throw new ProductAlreadyHandledException();
+            //         }
+            //         else if (entered == "d")
+            //         {
+            //             throw new InvalidProductException();
+            //         }
+            //         else if (entered == "a")
+            //         {
+            //             return await Extract(url,isUserStarts);
+            //         }
+            //         else if (entered == "b")
+            //         {
+            //             throw new ParserException();
+            //         }
+            //     } while (true);
+            // }
+            // else
+            // {
+            //     throw new ProductAlreadyHandledException();
+            // }
         }
     }
 
@@ -127,7 +127,11 @@ public class ProductExtracter
                 await password.PressSequentiallyAsync(SaverExtensions.Creaditails.Value.Password, pressOptions);
 
                 await _page.Locator("#rememberme").SetCheckedAsync(true);
+                
+                #if !DEBUG 
                 await _page.GetByText("Captcha solved!").WaitForAsync();
+                #endif
+                
                 await MoveMouseInCircleAsync(_page, 400, 300, 100,60,2);
                 await Task.Delay(1500);
                 await _page.GetByText("Zaloguj się").First.ClickAsync();

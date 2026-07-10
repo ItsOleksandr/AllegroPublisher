@@ -9,20 +9,25 @@ public static class CSVMaker
     
     public static void MakeCSV(List<ProductInfo> products, CSVOptions options)
     {
-        var csvOptions = SaverExtensions.CSVOptions.Value;
+        var filter = FilterProduct(options);
         var filteredProducts = products
-            .Where(x => !x.CategoriesUrls
-                            .Any(categoryUrl => csvOptions.CategoriesBlackList
-                                .Any(categoryUrl
-                                    .Contains)) 
-                        && x.Count >= csvOptions.MinimalProductCount
-                        && x.Price >= csvOptions.MinimalPrice
-                        && !x.EAN.Contains("—"))
+            .Where(filter.Invoke)
             .ToList();
-        filteredProducts.ForEach(x=>x.Price *= csvOptions.MultiplierPrice);
+        filteredProducts.ForEach(x=>x.Price *= options.MultiplierPrice);
     
-        var result = CSVMaker.GetCSV(filteredProducts);
+        var result = GetCSV(filteredProducts);
         File.WriteAllText(Path.Combine(SaverExtensions.ResourceDirectory,FileName),result);
+    }
+
+    public static Func<ProductInfo, bool> FilterProduct(CSVOptions options)
+    {
+        return x => !x.CategoriesUrls
+                               .Any(categoryUrl => options.CategoriesBlackList
+                                   .Any(categoryUrl
+                                       .Contains)) 
+                           && x.Count >= options.MinimalProductCount
+                           && x.Price >= options.MinimalPrice
+                           && !x.EAN.Contains("—");
     }
     
     private static string GetCSV(List<ProductInfo> products)

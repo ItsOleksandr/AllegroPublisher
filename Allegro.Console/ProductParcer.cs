@@ -16,6 +16,17 @@ public class ProductParcer
         
         string extensionPathVpn = Path.Combine(SaverExtensions.ResourceDirectory,"nord_vpn");
         string extensionPathCaptcha = Path.Combine(SaverExtensions.ResourceDirectory,"captcha");
+        if (!Directory.Exists(extensionPathCaptcha))
+        {
+            System.Console.WriteLine($"Extension not found{extensionPathCaptcha}");
+            extensionPathCaptcha = "";
+        }
+
+        if (!Directory.Exists(extensionPathVpn))
+        {
+            System.Console.WriteLine($"Extension not found{extensionPathVpn}");
+            extensionPathVpn = "";
+        }
         
         args.Add($"--disable-extensions-except={extensionPathVpn},{extensionPathCaptcha}");
         args.Add($"--load-extension={extensionPathVpn},{extensionPathCaptcha}");
