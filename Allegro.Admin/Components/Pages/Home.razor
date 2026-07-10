@@ -5,6 +5,7 @@
 @implements IDisposable
 @inject ToastService toastService
 @inject Saver<SaveData> saveData
+@inject AllegroPublishService allegro
 @rendermode InteractiveServer
 
 <PageTitle>Allegro parser</PageTitle>
@@ -162,7 +163,7 @@
             </div>
         </div>
     </div>
-
+    
     <div class="col-12">
         <div class="card shadow-sm">
             <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
@@ -176,6 +177,60 @@
         </div>
     </div>
 
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                <span>Publish to Allegro</span>
+                <span class="badge @(allegro.Settings.IsConnected ? "bg-success" : "bg-secondary")">
+                    @(allegro.Settings.IsConnected ? "Connected" : "Not connected")
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-12 col-md-5">
+                        <label class="form-label" for="clientIdInput">Client ID</label>
+                        <input id="clientIdInput" class="form-control" type="text" @bind="allegro.Settings.ClientId" />
+                        <div class="form-text">Client ID of your app from <code>apps.developer.allegro.pl</code>.</div>
+                    </div>
+                    <div class="col-12 col-md-5">
+                        <label class="form-label" for="clientSecretInput">Client Secret</label>
+                        <input id="clientSecretInput" class="form-control" type="password" @bind="allegro.Settings.ClientSecret" />
+                        <div class="form-text">Client Secret of the same app. Stored locally in <code>allegro_settings.txt</code>.</div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label" for="currencyInput">Currency</label>
+                        <input id="currencyInput" class="form-control" type="text" @bind="allegro.Settings.Currency" />
+                        <div class="form-text">e.g. PLN.</div>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                    <button class="btn btn-outline-secondary" @onclick="SaveAllOptions">Save credentials</button>
+                    <button class="btn btn-outline-primary" @onclick="ConnectAllegro">@(allegro.Settings.IsConnected ? "Reconnect account" : "Connect account")</button>
+                    <button class="btn btn-success" disabled="@(!allegro.Settings.IsConnected || allegro.IsPublishing)" @onclick="PublishToAllegro">
+                        @(allegro.IsPublishing ? "Publishing..." : "Publish CSV to Allegro")
+                    </button>
+                </div>
+
+                @if (_deviceInfo is not null)
+                {
+                    <div class="alert alert-info py-2 mb-2">
+                        Open <a href="@_deviceInfo.VerificationUri" target="_blank">@_deviceInfo.VerificationUri</a>
+                        and confirm the code <strong>@_deviceInfo.UserCode</strong>. This panel updates to
+                        <em>Connected</em> once you approve.
+                    </div>
+                }
+
+                <div class="form-text mb-3">
+                    Reads <code>@CSVMaker.FileName</code> (EAN;Liczba;Cena) and updates <strong>price and stock</strong> on existing
+                    offers. Offers are matched by their <strong>external ID = EAN</strong>. Products with no matching offer are skipped
+                    (new offers are not created).
+                </div>
+
+                <pre class="bg-dark text-light p-3 rounded mb-0" style="max-height: 240px; overflow-y: auto; font-size: 0.8rem; white-space: pre-wrap;">@(allegro.Logs.Count == 0 ? "No publish activity yet." : string.Join("\n", allegro.Logs))</pre>
+            </div>
+        </div>
+    </div>
 </div>
 
 
@@ -196,6 +251,8 @@
     private static readonly ConcurrentQueue<string> _consoleLogs = new();
     private const int MaxLogLines = 300;
     private Timer? _logRefreshTimer;
+
+    private AllegroPublishService.DeviceFlowInfo? _deviceInfo;
 
     private string CategoriesBlackListText
     {
@@ -234,7 +291,34 @@
             saveData.Write();
             SaverExtensions.CSVOptions.Value = _csvOptions;
             SaverExtensions.CSVOptions.Write();
+            allegro.SaveSettings();
             toastService.ShowSuccess("Options saved successfully!");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+    }
+
+    private async Task ConnectAllegro()
+    {
+        try
+        {
+            _deviceInfo = await allegro.ConnectAsync();
+            toastService.ShowInfo("Confirm the code on Allegro to finish connecting.");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+    }
+
+    private async Task PublishToAllegro()
+    {
+        try
+        {
+            var updated = await allegro.PublishAsync();
+            toastService.ShowSuccess($"Published: {updated} offers updated.");
         }
         catch (Exception e)
         {

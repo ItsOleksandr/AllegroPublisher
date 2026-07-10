@@ -10,6 +10,8 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddSingleton<Saver<SaveData>>( _ => new Saver<SaveData>("admin_options.txt"));
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<AllegroPublishService>();
 
 var app = builder.Build();
 

@@ -57,3 +57,20 @@ SaverExtensions.Urls.Value = urls;
 SaverExtensions.Urls.Write();
 
 CSVMaker.MakeCSV(responseParsing.Products.Values.ToList(),SaverExtensions.CSVOptions.Value);
+
+var publisher = new AllegroPublisher();
+
+if (!publisher.Settings.IsConnected)
+{
+    Console.WriteLine("Allegro account is not connected. Starting device authorization ...");
+    var auth = await publisher.StartDeviceFlowAsync(Console.WriteLine);
+    Console.WriteLine($"Open {auth.VerificationUri} and confirm code {auth.UserCode}");
+    if (!await publisher.PollForTokenAsync(auth, Console.WriteLine))
+    {
+        Console.WriteLine("Could not connect the Allegro account. Aborting publish.");
+        return;
+    }
+}
+
+var updated = await publisher.PublishAsync(Console.WriteLine);
+Console.WriteLine($"Publish finished: {updated} offers updated.");
