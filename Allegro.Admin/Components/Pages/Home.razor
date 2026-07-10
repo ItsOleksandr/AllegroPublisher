@@ -1,5 +1,8 @@
 ﻿@page "/"
+@using System.Diagnostics
+@using Allegro.Admin.Models
 @inject ToastService toastService
+@inject Saver<SaveData> saveData
 @rendermode InteractiveServer
 
 <PageTitle>Allegro parser</PageTitle>
@@ -12,12 +15,81 @@
 <h3>Success: @(_lastParsing.Products.Count)</h3>
 <h3>Failed / Invalid Urls: @_lastParsing.BlackListUrls.Count</h3>
 <h3>Last parse status: @(_lastParsing.AllUrls.Count - _lastParsing.CurrentIndexUrl - 1 == 0 ? "Success" : $"Failure on {_lastParsing.CurrentIndexUrl}")</h3>
+
+
 <a href="/@CSVMaker.FileName" download="@CSVMaker.FileName">Download products.csv</a>
+<button class="btn btn-primary" @onclick="RegenerateCsv">Regenerate CSV</button>
+
+<input type="text" @bind="@saveData.Value.PathDllConsole" placeholder="Path to console.dll" />
+
+<button @onclick="()=>StartConsole(saveData.Value.PathDllConsole,_consoleBaseStartOptions.Args)">Start parsing</button>
+<button @onclick="()=>StartConsole(saveData.Value.PathDllConsole,_consoleBrowserOnlyOptions.Args)">Only Browser</button>
+
+<h3>Advanced options:</h3>
+<input type="checkbox" @bind="_consoleAdvancedOptions.ConfigureBrowser" placeholder="only configure browser" />
+<input type="number" @bind="_consoleAdvancedOptions.StartIndex" placeholder="Start from index [0 .. lenght]" />
+<select @bind="_consoleAdvancedOptions.ModeXml">
+    <option value="none">Saved links</option>
+    <option value="new_parse">New parse links</option>
+    <option value="load_last_session">Continue last session</option>
+</select>
+<input type="checkbox" @bind="_consoleAdvancedOptions.IsUserStart" placeholder="Is user start" />
+<button @onclick="()=>StartConsole(saveData.Value.PathDllConsole,_consoleAdvancedOptions.Args)">Start advanced</button>
+
 
 @code{
     private ParseResponse _lastParsing = new ParseResponse();
+    private StartParserProcessOptions _consoleAdvancedOptions = new StartParserProcessOptions();
+    private static StartParserProcessOptions _consoleBaseStartOptions = new StartParserProcessOptions();
+    private static StartParserProcessOptions _consoleBrowserOnlyOptions = new StartParserProcessOptions() { ConfigureBrowser = true };
+    private bool isStartedConsole => saveData.Value.StartedConsoleId != null;
+    
     protected override void OnParametersSet()
     {
         _lastParsing = SaverExtensions.LastParse.Value;
+    }
+
+    private void RegenerateCsv()
+    {
+        CSVMaker.MakeCSV(SaverExtensions.Products.Value.Values.ToList(),SaverExtensions.CSVOptions.Value);
+        toastService.ShowSuccess("CSV regenerated successfully!");
+    }
+
+    private void StartConsole(string pathDll,string args)
+    {
+        string workingDirectory = Path.GetDirectoryName(pathDll) ?? "";
+        string fileName = Path.GetFileName(pathDll);
+        var process = Process.Start(new ProcessStartInfo()
+        {
+            Arguments = args,
+            WorkingDirectory = workingDirectory,
+            FileName = fileName,
+        });
+        if (process != null)
+        {
+            saveData.Value.StartedConsoleId = process.Id.ToString();
+            saveData.Write();
+        }
+    }
+
+    private void StopConsole()
+    {
+        Process.Start("kill", saveData.Value.StartedConsoleId ?? "");
+        saveData.Value.StartedConsoleId = null;
+        saveData.Write();
+    }
+    
+    private class StartParserProcessOptions
+    {
+        public int StartIndex { get; set; } = 0;
+        public bool ConfigureBrowser { get; set; } = false;
+        public string ModeXml { get; set; } = "none";
+        public bool IsUserStart { get; set; } = true;
+        
+        public string Args => 
+            (StartIndex > 0 ? $"--start-index={StartIndex} " : "") +
+            (ConfigureBrowser ? "--configure-browser " : "") +
+            $"--mode-xml={ModeXml} " +
+            (IsUserStart ? "--mode=manual " : "");
     }
 }
