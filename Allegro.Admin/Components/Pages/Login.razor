@@ -1,8 +1,41 @@
 @page "/login"
 
-<h3>Login</h3>
+<PageTitle>Login · Allegro parser</PageTitle>
 
-<form action="/auth/login" method="post">
-    <input type="password" name="password" placeholder="Enter password" required />
-    <button type="submit">Login</button>
-</form>
+<div class="login-page">
+    <div class="login-card shadow-lg">
+        <div class="login-brand">
+            <div class="login-logo">🛒</div>
+            <h1 class="login-title">Allegro parser</h1>
+            <p class="login-subtitle">Sign in to the admin panel</p>
+        </div>
+
+        @if (Failed)
+        {
+            <div class="alert alert-danger py-2 d-flex align-items-center gap-2 mb-3" role="alert">
+                <span>⚠️</span>
+                <span>Wrong password. Please try again.</span>
+            </div>
+        }
+
+        <form action="/auth/login" method="post" class="login-form">
+            <label class="form-label fw-semibold" for="password">Password</label>
+            <div class="input-group mb-3">
+                <span class="input-group-text">🔒</span>
+                <input id="password"
+                       class="form-control form-control-lg"
+                       type="password"
+                       name="password"
+                       placeholder="Enter password"
+                       autofocus
+                       required />
+            </div>
+            <button class="btn btn-primary btn-lg w-100" type="submit">Sign in</button>
+        </form>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "failed")]
+    public bool Failed { get; set; }
+}

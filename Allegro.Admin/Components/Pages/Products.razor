@@ -1,0 +1,143 @@
+@page "/products"
+@using Microsoft.AspNetCore.Authorization
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+<PageTitle>Products · Allegro parser</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <h1 class="mb-0">Products</h1>
+    <div class="d-flex align-items-center flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" href="/">← Back to dashboard</a>
+        <form action="/auth/logout" method="post" class="m-0">
+            <button class="btn btn-outline-danger" type="submit">Logout</button>
+        </form>
+    </div>
+</div>
+
+<div class="row text-center g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold">@_products.Count</div>
+            <div class="text-muted small">Total products</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold text-success">@_products.Count(p => Included(p))</div>
+            <div class="text-muted small">Included in CSV</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold text-warning">@_products.Count(p => !Included(p))</div>
+            <div class="text-muted small">Excluded</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold">@_products.Sum(p => p.Count)</div>
+            <div class="text-muted small">Total stock</div>
+        </div></div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-semibold">All parsed products</span>
+        <input class="form-control form-control-sm" style="max-width: 260px"
+               type="search" placeholder="Search name, EAN…" @bind="_search" @bind:event="oninput" />
+    </div>
+    <div class="card-body p-0">
+        @if (_products.Count == 0)
+        {
+            <div class="p-4 text-center text-muted">No products parsed yet.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Product</th>
+                            <th class="text-end">Price</th>
+                            <th class="text-end">Count</th>
+                            <th>EAN</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in Filtered)
+                        {
+                            var status = GetStatus(p);
+                            <tr>
+                                <td>
+                                    <a href="@p.Url" target="_blank" rel="noreferrer" class="fw-semibold text-decoration-none">
+                                        @(string.IsNullOrWhiteSpace(p.Name) ? p.Url : p.Name)
+                                    </a>
+                                    @if (p.CategoriesUrls.Length > 0)
+                                    {
+                                        <div class="small text-muted text-truncate" style="max-width: 420px">
+                                            @string.Join(" · ", p.CategoriesUrls)
+                                        </div>
+                                    }
+                                </td>
+                                <td class="text-end">@p.Price.ToString("0.##")</td>
+                                <td class="text-end">@p.Count</td>
+                                <td><code>@(string.IsNullOrWhiteSpace(p.EAN) ? "—" : p.EAN)</code></td>
+                                <td>
+                                    <span class="badge @status.CssClass">@status.Label</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<ProductInfo> _products = new();
+    private CSVOptions _csvOptions = new();
+    private string _search = "";
+
+    protected override void OnInitialized()
+    {
+        _csvOptions = SaverExtensions.CSVOptions.Read();
+        _products = SaverExtensions.Products.Read().Values.ToList();
+    }
+
+    private IEnumerable<ProductInfo> Filtered
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_search))
+                return _products;
+
+            var term = _search.Trim();
+            return _products.Where(p =>
+                (p.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (p.EAN?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+    }
+
+    private bool Included(ProductInfo p) => CSVMaker.FilterProduct(_csvOptions).Invoke(p);
+
+    private (string Label, string CssClass) GetStatus(ProductInfo p)
+    {
+        if (!string.IsNullOrEmpty(p.EAN) && p.EAN.Contains("—"))
+            return ("Invalid EAN", "bg-danger");
+
+        if (p.CategoriesUrls.Any(c => _csvOptions.CategoriesBlackList.Any(c.Contains)))
+            return ("Blacklisted category", "bg-secondary");
+
+        if (p.Count < _csvOptions.MinimalProductCount)
+            return ("Low stock", "bg-warning text-dark");
+
+        if (p.Price < _csvOptions.MinimalPrice)
+            return ("Below min price", "bg-warning text-dark");
+
+        return ("Included", "bg-success");
+    }
+}

@@ -12,10 +12,16 @@
 
 <PageTitle>Allegro parser</PageTitle>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
     <h1 class="mb-0">Allegro parser</h1>
-    <a href="https://salescenter.allegro.com/import-and-list">sales center allegro</a>
-    <button class="btn btn-success" @onclick="SaveAllOptions">Save all options</button>
+    <div class="d-flex align-items-center flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" href="/products">Products</a>
+        <a href="https://salescenter.allegro.com/import-and-list" class="btn btn-outline-secondary" target="_blank">sales center allegro</a>
+        <button class="btn btn-success" @onclick="SaveAllOptions">Save all options</button>
+        <form action="/auth/logout" method="post" class="m-0">
+            <button class="btn btn-outline-danger" type="submit">Logout</button>
+        </form>
+    </div>
 </div>
 
 <div class="row g-3">

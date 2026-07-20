@@ -47,7 +47,10 @@ app.MapPost("/auth/login", async (HttpContext ctx) =>
     var form = await ctx.Request.ReadFormAsync();
     var password = form["password"].ToString();
 
-    if (password == "1234")
+    var expectedPassword = ctx.RequestServices
+        .GetRequiredService<IConfiguration>()["Auth:Password"];
+
+    if (password == expectedPassword)
     {
         var claims = new List<Claim> { new Claim(ClaimTypes.Name, "Admin") };
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
