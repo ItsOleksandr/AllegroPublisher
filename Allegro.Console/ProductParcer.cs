@@ -36,7 +36,7 @@ public class ProductParcer
             Args = args ,
             Env = new Dictionary<string, string>()
             {
-                { "DISPLAY", "99" }
+                { "DISPLAY", ":99" }
             }
         });
         
