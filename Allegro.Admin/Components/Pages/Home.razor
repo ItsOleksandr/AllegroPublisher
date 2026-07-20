@@ -2,11 +2,13 @@
 @using System.Collections.Concurrent
 @using System.Diagnostics
 @using Allegro.Admin.Models
+@using Microsoft.AspNetCore.Authorization
 @implements IDisposable
 @inject ToastService toastService
 @inject Saver<SaveData> saveData
 @inject AllegroPublishService allegro
 @rendermode InteractiveServer
+@attribute [Authorize]
 
 <PageTitle>Allegro parser</PageTitle>
 

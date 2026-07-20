@@ -1,7 +1,10 @@
+using System.Security.Claims;
 using Allegro.Admin.Components;
 using Allegro.Admin.Models;
 using Allegro.Admin.Services;
 using Allegro.Core;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +15,13 @@ builder.Services.AddScoped<ToastService>();
 builder.Services.AddSingleton<Saver<SaveData>>( _ => new Saver<SaveData>("admin_options.txt"));
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<AllegroPublishService>();
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/login";
+    });
+builder.Services.AddAuthorization();
+builder.Services.AddCascadingAuthenticationState();
 
 var app = builder.Build();
 
@@ -21,6 +31,9 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.UseHttpsRedirection();
 
 app.UseStaticFiles();
@@ -28,6 +41,29 @@ app.UseAntiforgery();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+app.MapPost("/auth/login", async (HttpContext ctx) =>
+{
+    var form = await ctx.Request.ReadFormAsync();
+    var password = form["password"].ToString();
+
+    if (password == "1234")
+    {
+        var claims = new List<Claim> { new Claim(ClaimTypes.Name, "Admin") };
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        await ctx.SignInAsync(new ClaimsPrincipal(identity));
+        
+        return Results.Redirect("/");
+    }
+    
+    return Results.Redirect("/login?failed=true");
+});
+
+app.MapPost("/auth/logout", async (HttpContext ctx) =>
+{
+    await ctx.SignOutAsync();
+    return Results.Redirect("/login");
+});
 
 app.MapGet($"/{CSVMaker.FileName}", (HttpContext context) =>
 {
