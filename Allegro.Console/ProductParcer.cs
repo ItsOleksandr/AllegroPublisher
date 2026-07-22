@@ -53,10 +53,10 @@ public class ProductParcer
     {
         var browser = await CreateBrowserContext();
         var page = await browser.NewPageAsync();
-        var pages = browser.Pages;
-        foreach (IPage pageForClose in pages)
+        var pagesToDelete = browser.Pages.Where(x=> x != page).ToArray();
+        foreach (IPage pageToDelete in pagesToDelete)
         {
-            if(pageForClose != page) await pageForClose.CloseAsync();
+            await pageToDelete.CloseAsync();
         }
         
         ProductExtracter extracter = new ProductExtracter(page);
