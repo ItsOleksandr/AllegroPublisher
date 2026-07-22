@@ -15,7 +15,16 @@ public class ProductExtracter
     
     public async Task<ProductInfo> Extract(string url,bool isUserStarts)
     {
-        await _page.GotoAsync(url, _gotoOptions);
+        try
+        {
+            await _page.GotoAsync(url, _gotoOptions);
+        }
+        catch
+        {
+            await Task.Delay(2000);
+            await _page.GotoAsync(url, _gotoOptions);
+        }
+        
         var acceptCookieButton = _page.GetByText("Akceptuj wszystko");
         if (await acceptCookieButton.IsVisibleAsync())
         {

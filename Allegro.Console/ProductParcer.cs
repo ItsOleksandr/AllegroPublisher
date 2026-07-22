@@ -53,6 +53,8 @@ public class ProductParcer
     {
         var browser = await CreateBrowserContext();
         var page = await browser.NewPageAsync();
+        await page.RouteAsync("**/*.{png,jpg,jpeg,gif,svg}", async route => await route.AbortAsync());
+        await Task.Delay(2000);
         var pagesToDelete = browser.Pages.Where(x=> x != page).ToArray();
         foreach (IPage pageToDelete in pagesToDelete)
         {
