@@ -11,7 +11,10 @@ public class ProductParcer
         var args = new List<string> 
         { 
             "--disable-blink-features=AutomationControlled", 
-            "--no-sandbox"
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage"
+            
         };
         
         string extensionPathVpn = Path.Combine(SaverExtensions.ResourceDirectory,"nord_vpn");

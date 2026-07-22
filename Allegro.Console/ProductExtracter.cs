@@ -7,7 +7,7 @@ namespace Allegro.Console;
 public class ProductExtracter
 {
     private readonly IPage _page;
-    private PageGotoOptions _gotoOptions = new PageGotoOptions {Timeout = 10000 , WaitUntil = WaitUntilState.Load};
+    private PageGotoOptions _gotoOptions = new PageGotoOptions {Timeout = 10000 , WaitUntil = WaitUntilState.DOMContentLoaded};
     public ProductExtracter(IPage page)
     {
         _page = page;
