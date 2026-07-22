@@ -53,6 +53,11 @@ public class ProductParcer
     {
         var browser = await CreateBrowserContext();
         var page = await browser.NewPageAsync();
+        var pages = browser.Pages;
+        foreach (IPage pageForClose in pages)
+        {
+            if(pageForClose != page) await pageForClose.CloseAsync();
+        }
         
         ProductExtracter extracter = new ProductExtracter(page);
         
@@ -77,8 +82,10 @@ public class ProductParcer
             {
                 break;
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                System.Console.WriteLine($"Unhandled exception: {e.Message}");
+                if (isUserStarts) await Task.Delay(5000);
                 continue;
             }
             

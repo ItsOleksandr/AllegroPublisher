@@ -194,7 +194,6 @@ public class AllegroPublisher
             if (!offerIdByEan.TryGetValue(row.Ean, out var offerId))
             {
                 skipped++;
-                log?.Invoke($"Skip EAN {row.Ean}: no offer with this external id.");
                 continue;
             }
 
