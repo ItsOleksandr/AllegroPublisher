@@ -14,7 +14,11 @@ public class ProductParcer
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage",
-            "--disable-gpu"
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--js-flags=--max-old-space-size=256",
+            "--renderer-process-limit=1",
+            "--disable-background-networking",
             
         };
         
@@ -36,7 +40,7 @@ public class ProductParcer
         args.Add($"--load-extension={extensionPathVpn},{extensionPathCaptcha}");
         var browser = await playwright.Chromium.LaunchPersistentContextAsync(Path.Combine(SaverExtensions.ResourceDirectory,"PlaywrightData"), new BrowserTypeLaunchPersistentContextOptions()
         {
-            Headless = false,
+            Headless = true,
             Args = args ,
             Env = new Dictionary<string, string>()
             {
@@ -66,7 +70,7 @@ public class ProductParcer
         }
         
         ProductExtracter extracter = new ProductExtracter(page);
-        
+
         for(; response.CurrentIndexUrl < response.AllUrls.Count; response.CurrentIndexUrl++)
         {
             var url = response.AllUrls[response.CurrentIndexUrl];
@@ -94,7 +98,7 @@ public class ProductParcer
                 if (isUserStarts) await Task.Delay(5000);
                 continue;
             }
-            
+
             response.Products[product.Url] = product;
             SaverExtensions.LastParse.Value = response;
             SaverExtensions.LastParse.Write();
