@@ -13,7 +13,7 @@ public static class CSVMaker
         foreach (ProductInfo productInfo in products)
         {
             var isValid = filter.Invoke(productInfo);
-            if (isValid) productInfo.Count = 0;
+            if (!isValid) productInfo.Count = 0;
             
             productInfo.Price *= options.MultiplierPrice;
         }
