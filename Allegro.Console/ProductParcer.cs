@@ -16,8 +16,6 @@ public class ProductParcer
             "--disable-dev-shm-usage",
             "--disable-gpu",
             "--disable-software-rasterizer",
-            "--js-flags=--max-old-space-size=256",
-            "--renderer-process-limit=1",
             "--disable-background-networking",
 
         };
@@ -70,13 +68,6 @@ public class ProductParcer
     {
         var browser = await CreateBrowserContext();
         var page = await browser.NewPageAsync();
-        await page.RouteAsync("**/*.{png,jpg,jpeg,gif,svg}", async route => await route.AbortAsync());
-        await Task.Delay(2000);
-        var pagesToDelete = browser.Pages.Where(x=> x != page).ToArray();
-        foreach (IPage pageToDelete in pagesToDelete)
-        {
-            await pageToDelete.CloseAsync();
-        }
         
         ProductExtracter extracter = new ProductExtracter(page);
 
