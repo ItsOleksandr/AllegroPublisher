@@ -5,12 +5,12 @@ namespace Allegro.Console;
 
 public class ProductParcer
 {
-    public async Task<IBrowserContext> CreateBrowserContext()
+    public async Task<IBrowserContext> CreateBrowserContext(bool visible = false)
     {
         var playwright = await Playwright.CreateAsync();
-        var args = new List<string> 
-        { 
-            "--disable-blink-features=AutomationControlled", 
+        var args = new List<string>
+        {
+            "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage",
@@ -19,8 +19,15 @@ public class ProductParcer
             "--js-flags=--max-old-space-size=256",
             "--renderer-process-limit=1",
             "--disable-background-networking",
-            
+
         };
+
+        // New headless loads extensions (captcha/vpn) but does NOT need the crash-prone Xvfb display.
+        // Only a manual login session (viewed over VNC) needs a real visible window on :99.
+        if (!visible)
+        {
+            args.Add("--headless=new");
+        }
         
         string extensionPathVpn = Path.Combine(SaverExtensions.ResourceDirectory,"nord_vpn");
         string extensionPathCaptcha = Path.Combine(SaverExtensions.ResourceDirectory,"captcha");
@@ -40,7 +47,9 @@ public class ProductParcer
         args.Add($"--load-extension={extensionPathVpn},{extensionPathCaptcha}");
         var browser = await playwright.Chromium.LaunchPersistentContextAsync(Path.Combine(SaverExtensions.ResourceDirectory,"PlaywrightData"), new BrowserTypeLaunchPersistentContextOptions()
         {
-            Headless = true,
+            // false so Playwright doesn't force *old* headless (which drops extensions);
+            // we control the mode ourselves via the --headless=new arg above.
+            Headless = false,
             Args = args ,
             Env = new Dictionary<string, string>()
             {

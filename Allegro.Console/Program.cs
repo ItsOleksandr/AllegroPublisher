@@ -5,7 +5,7 @@ if (args.Contains("--configure-browser"))
 {
     Console.WriteLine("Starting browser ...");
     ProductParcer productParcerConfigure = new ProductParcer();
-    var configureBrowser = await productParcerConfigure.CreateBrowserContext();
+    var configureBrowser = await productParcerConfigure.CreateBrowserContext(visible: true);
     await configureBrowser.NewPageAsync();
     Console.WriteLine("Browser started");
     await Task.Delay(-1);
