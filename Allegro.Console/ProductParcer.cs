@@ -73,13 +73,13 @@ public class ProductParcer
                 SaverExtensions.LastParse.Write();
                 continue;
             }
-            catch (ProductAlreadyHandledException)
-            {
-                continue;
-            }
             catch (ParserException)
             {
                 break;
+            }
+            catch (Exception)
+            {
+                continue;
             }
             
             response.Products[product.Url] = product;

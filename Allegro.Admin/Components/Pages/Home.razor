@@ -40,7 +40,7 @@
                         <div class="text-muted small">Success</div>
                     </div>
                     <div class="col">
-                        <div class="fs-4 fw-bold text-danger">@(_lastParsing.AllUrls.Count - _lastParsing.Products.Count) / @(_lastParsing.Products.Values.Count - _lastParsing.Products.Values.Where(CSVMaker.FilterProduct(SaverExtensions.CSVOptions.Read()).Invoke).Count())</div>
+                        <div class="fs-4 fw-bold text-danger">@(_lastParsing.AllUrls.Count - _lastParsing.Products.Count)</div>
                         <div class="text-muted small">Failed / black list</div>
                     </div>
                 </div>
@@ -113,7 +113,7 @@
     <div class="col-12">
         <div class="card shadow-sm">
             <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
-                <span>Console</span>
+                <span>Parser</span>
                 <span class="badge @(isStartedConsole ? "bg-success" : "bg-secondary")">
                     @(isStartedConsole ? $"Running (PID {saveData.Value.StartedConsoleId})" : "Not running")
                 </span>

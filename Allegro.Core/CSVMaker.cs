@@ -10,12 +10,15 @@ public static class CSVMaker
     public static void MakeCSV(List<ProductInfo> products, CSVOptions options)
     {
         var filter = FilterProduct(options);
-        var filteredProducts = products
-            .Where(filter.Invoke)
-            .ToList();
-        filteredProducts.ForEach(x=>x.Price *= options.MultiplierPrice);
+        foreach (ProductInfo productInfo in products)
+        {
+            var isValid = filter.Invoke(productInfo);
+            if (isValid) productInfo.Count = 0;
+            
+            productInfo.Price *= options.MultiplierPrice;
+        }
     
-        var result = GetCSV(filteredProducts);
+        var result = GetCSV(products);
         File.WriteAllText(Path.Combine(SaverExtensions.ResourceDirectory,FileName),result);
     }
 
@@ -37,7 +40,7 @@ public static class CSVMaker
 
         foreach (var product in products)
         {
-            stringBuilder.AppendLine(string.Join(";",product.EAN ,product.Count , (product.Price * 3).ToString(CultureInfo.InvariantCulture)));
+            stringBuilder.AppendLine(string.Join(";",product.EAN ,product.Count , product.Price.ToString(CultureInfo.InvariantCulture)));
         }
         return stringBuilder.ToString();
     }
