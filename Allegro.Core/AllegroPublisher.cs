@@ -191,23 +191,35 @@ public class AllegroPublisher
         int updated = 0, skipped = 0, failed = 0;
         foreach (var row in rows)
         {
-            if (!offerIdByEan.TryGetValue(row.Ean, out var offerId))
+            if (!offerIdByEan.TryGetValue(row.Ean, out var offer))
             {
                 skipped++;
                 continue;
             }
 
+            var offerId = offer.Id;
             try
             {
-                // Stock 0 ends the offer on Allegro. Re-pricing an offer we are about to end
-                // is pointless, and fails outright once it is already ended - which would
-                // otherwise abort the whole run on the next publish.
                 if (row.Count > 0)
                 {
                     await ChangePriceAsync(offerId, row.Price);
+                    await ChangeQuantityAsync(offerId, row.Count);
+                    if (!offer.IsActive)
+                    {
+                        await SetOfferActiveAsync(offerId, true);
+                        log?.Invoke($"Re-activated offer {offerId} (EAN {row.Ean}).");
+                    }
+                }
+                else if (offer.IsActive)
+                {
+                    await SetOfferActiveAsync(offerId, false);
+                    log?.Invoke($"Ended offer {offerId} (EAN {row.Ean}) - below the stock threshold.");
+                }
+                else
+                {
+                    continue;
                 }
 
-                await ChangeQuantityAsync(offerId, row.Count);
                 updated++;
                 log?.Invoke($"Updated offer {offerId} (EAN {row.Ean}) → price {row.Price.ToString(CultureInfo.InvariantCulture)} {Settings.Currency}, stock {row.Count}.");
             }
@@ -256,10 +268,16 @@ public class AllegroPublisher
         return rows;
     }
 
-    /// <summary>Maps each EAN to an offer id by querying own offers with external.id == EAN (batched).</summary>
-    private async Task<Dictionary<string, string>> ResolveOfferIdsAsync(IEnumerable<string> eans, Action<string>? log)
+    /// <summary>An offer we matched, plus whether it is currently visible to buyers.</summary>
+    private record OfferRef(string Id, string Status)
     {
-        var result = new Dictionary<string, string>();
+        public bool IsActive => string.Equals(Status, "ACTIVE", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Maps each EAN to an offer id by querying own offers with external.id == EAN (batched).</summary>
+    private async Task<Dictionary<string, OfferRef>> ResolveOfferIdsAsync(IEnumerable<string> eans, Action<string>? log)
+    {
+        var result = new Dictionary<string, OfferRef>();
         var distinct = eans.Distinct().ToList();
 
         const int batchSize = 50;
@@ -282,7 +300,7 @@ public class AllegroPublisher
                 var ean = offer.External?.Id;
                 if (!string.IsNullOrEmpty(ean) && !string.IsNullOrEmpty(offer.Id))
                 {
-                    result[ean] = offer.Id;
+                    result[ean] = new OfferRef(offer.Id, offer.Publication?.Status ?? "");
                 }
             }
         }
@@ -320,6 +338,22 @@ public class AllegroPublisher
         };
         await SendCommandAsync($"{ApiBase}/sale/offer-quantity-change-commands/{Guid.NewGuid()}", payload, "quantity");
     }
+    
+    public async Task SetOfferActiveAsync(string offerId, bool active)
+    {
+        var payload = new
+        {
+            publication = new { action = active ? "ACTIVATE" : "END" },
+            offerCriteria = new[]
+            {
+                new { type = "CONTAINS_OFFERS", offers = new[] { new { id = offerId } } },
+            },
+        };
+        await SendCommandAsync(
+            $"{ApiBase}/sale/offer-publication-commands/{Guid.NewGuid()}",
+            payload,
+            active ? "activate offer" : "end offer");
+    }
 
     private async Task SendCommandAsync(string url, object payload, string what)
     {
@@ -335,8 +369,6 @@ public class AllegroPublisher
             throw new InvalidOperationException($"{what} change failed ({(int)response.StatusCode}): {body}");
         }
     }
-
-    // ------------------------------------------------------------------- helpers
 
     private HttpRequestMessage CreateApiRequest(HttpMethod method, string url)
     {
@@ -395,6 +427,12 @@ public class AllegroPublisher
     {
         [JsonPropertyName("id")] public string Id { get; set; } = "";
         [JsonPropertyName("external")] public ExternalId? External { get; set; }
+        [JsonPropertyName("publication")] public OfferPublication? Publication { get; set; }
+    }
+
+    private class OfferPublication
+    {
+        [JsonPropertyName("status")] public string Status { get; set; } = "";
     }
 
     private class ExternalId
