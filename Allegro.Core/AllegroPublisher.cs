@@ -188,7 +188,7 @@ public class AllegroPublisher
 
         var offerIdByEan = await ResolveOfferIdsAsync(rows.Select(r => r.Ean), log);
 
-        int updated = 0, skipped = 0;
+        int updated = 0, skipped = 0, failed = 0;
         foreach (var row in rows)
         {
             if (!offerIdByEan.TryGetValue(row.Ean, out var offerId))
@@ -197,13 +197,29 @@ public class AllegroPublisher
                 continue;
             }
 
-            await ChangePriceAsync(offerId, row.Price);
-            await ChangeQuantityAsync(offerId, row.Count);
-            updated++;
-            log?.Invoke($"Updated offer {offerId} (EAN {row.Ean}) → price {row.Price.ToString(CultureInfo.InvariantCulture)} {Settings.Currency}, stock {row.Count}.");
+            try
+            {
+                // Stock 0 ends the offer on Allegro. Re-pricing an offer we are about to end
+                // is pointless, and fails outright once it is already ended - which would
+                // otherwise abort the whole run on the next publish.
+                if (row.Count > 0)
+                {
+                    await ChangePriceAsync(offerId, row.Price);
+                }
+
+                await ChangeQuantityAsync(offerId, row.Count);
+                updated++;
+                log?.Invoke($"Updated offer {offerId} (EAN {row.Ean}) → price {row.Price.ToString(CultureInfo.InvariantCulture)} {Settings.Currency}, stock {row.Count}.");
+            }
+            catch (Exception e)
+            {
+                // One bad offer must not stop the remaining ones.
+                failed++;
+                log?.Invoke($"Failed offer {offerId} (EAN {row.Ean}): {e.Message}");
+            }
         }
 
-        log?.Invoke($"Publish finished: {updated} updated, {skipped} skipped.");
+        log?.Invoke($"Publish finished: {updated} updated, {skipped} skipped, {failed} failed.");
         return updated;
     }
 
