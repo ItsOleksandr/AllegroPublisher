@@ -44,9 +44,17 @@
 
 <div class="card shadow-sm">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <span class="fw-semibold">All parsed products</span>
-        <input class="form-control form-control-sm" style="max-width: 260px"
-               type="search" placeholder="Search name, EAN…" @bind="_search" @bind:event="oninput" />
+        <span class="fw-semibold">@(_onlyBlacklisted ? "Blacklisted products" : "All parsed products")</span>
+        <div class="d-flex align-items-center flex-wrap gap-3">
+            <div class="form-check mb-0">
+                <input id="onlyBlacklisted" class="form-check-input" type="checkbox" @bind="_onlyBlacklisted" />
+                <label class="form-check-label small" for="onlyBlacklisted">
+                    Only blacklisted (@BlacklistedCount)
+                </label>
+            </div>
+            <input class="form-control form-control-sm" style="max-width: 260px"
+                   type="search" placeholder="Search name, EAN…" @bind="_search" @bind:event="oninput" />
+        </div>
     </div>
     <div class="card-body p-0">
         @if (_products.Count == 0)
@@ -87,6 +95,12 @@
                                 <td><code>@(string.IsNullOrWhiteSpace(p.EAN) ? "—" : p.EAN)</code></td>
                                 <td>
                                     <span class="badge @status.CssClass">@status.Label</span>
+                                    @if (status.BlacklistRule is not null)
+                                    {
+                                        <div class="small text-muted">
+                                            matched: <code>@status.BlacklistRule</code>
+                                        </div>
+                                    }
                                 </td>
                             </tr>
                         }
@@ -101,6 +115,7 @@
     private List<ProductInfo> _products = new();
     private CSVOptions _csvOptions = new();
     private string _search = "";
+    private bool _onlyBlacklisted;
 
     protected override void OnInitialized()
     {
@@ -112,32 +127,52 @@
     {
         get
         {
-            if (string.IsNullOrWhiteSpace(_search))
-                return _products;
+            var items = _products.AsEnumerable();
 
-            var term = _search.Trim();
-            return _products.Where(p =>
-                (p.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (p.EAN?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+            if (_onlyBlacklisted)
+            {
+                items = items.Where(p => GetStatus(p).BlacklistRule is not null);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                var term = _search.Trim();
+                items = items.Where(p =>
+                    (p.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (p.EAN?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            return items;
         }
     }
 
     private bool Included(ProductInfo p) => CSVMaker.FilterProduct(_csvOptions).Invoke(p);
 
-    private (string Label, string CssClass) GetStatus(ProductInfo p)
+    private int BlacklistedCount => _products.Count(p => GetStatus(p).BlacklistRule is not null);
+
+    /// <param name="BlacklistRule">The blacklist entry that excluded this product, when a blacklist is why.</param>
+    private record Status(string Label, string CssClass, string? BlacklistRule = null);
+
+    private Status GetStatus(ProductInfo p)
     {
         if (!string.IsNullOrEmpty(p.EAN) && p.EAN.Contains("—"))
-            return ("Invalid EAN", "bg-danger");
+            return new Status("Invalid EAN", "bg-danger");
 
-        if (p.CategoriesUrls.Any(c => _csvOptions.CategoriesBlackList.Any(c.Contains)))
-            return ("Blacklisted category", "bg-secondary");
+        // Report which entry matched - that's how an over-broad blacklist term gets spotted.
+        var matchedCategory = _csvOptions.CategoriesBlackList
+            .FirstOrDefault(rule => p.CategoriesUrls.Any(c => c.Contains(rule)));
+        if (matchedCategory is not null)
+            return new Status("Blacklisted category", "bg-secondary", matchedCategory);
+
+        if (_csvOptions.EansBlackList.Contains(p.EAN))
+            return new Status("Blacklisted EAN", "bg-secondary", p.EAN);
 
         if (p.Count < _csvOptions.MinimalProductCount)
-            return ("Low stock", "bg-warning text-dark");
+            return new Status("Low stock", "bg-warning text-dark");
 
         if (p.Price < _csvOptions.MinimalPrice)
-            return ("Below min price", "bg-warning text-dark");
+            return new Status("Below min price", "bg-warning text-dark");
 
-        return ("Included", "bg-success");
+        return new Status("Included", "bg-success");
     }
 }
