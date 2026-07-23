@@ -268,26 +268,34 @@ public class AllegroPublisher
         return rows;
     }
 
-    /// <summary>An active offer that products.csv knows nothing about.</summary>
-    public record OrphanOffer(string Id, string Ean, string Name);
-    
+    /// <summary>An active offer whose product no longer passes the CSV options, and why.</summary>
+    public record OrphanOffer(string Id, string Ean, string Name, string Reason);
+
+    /// <summary>
+    /// Finds <b>active</b> offers listed by this app (they carry an <c>external.id</c>) whose product
+    /// is in the parsed catalogue but <b>no longer passes the current CSV options</b> — a blacklisted
+    /// category, a blacklisted EAN, stock below the minimum, and so on. These are the offers that
+    /// should not be on sale any more. Offers listed manually (no <c>external.id</c>) and products
+    /// the parser has never seen are left alone. Read-only: use <see cref="EndOffersAsync"/> to act.
+    /// </summary>
     public async Task<List<OrphanOffer>> FindOrphanOffersAsync(Action<string>? log = null)
     {
         await EnsureValidTokenAsync();
 
-        var csvEans = ReadCsvRows(log)
-            .Select(r => r.Ean)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var options = SaverExtensions.CSVOptions.Read();
+        var passesOptions = CSVMaker.FilterProduct(options);
 
-        if (csvEans.Count == 0)
+        var productByEan = new Dictionary<string, ProductInfo>(StringComparer.OrdinalIgnoreCase);
+        foreach (var product in SaverExtensions.Products.Read().Values)
         {
-            // Without this guard an empty/failed CSV would mark the whole assortment as orphaned.
-            throw new InvalidOperationException(
-                $"{CSVMaker.FileName} has no rows — refusing to scan, every offer would look orphaned.");
+            if (!string.IsNullOrEmpty(product.EAN))
+            {
+                productByEan[product.EAN] = product;
+            }
         }
 
         var orphans = new List<OrphanOffer>();
-        int total = 0, foreign = 0;
+        int total = 0, foreign = 0, unknown = 0;
         const int limit = 100;
 
         for (int offset = 0; ; offset += limit)
@@ -311,15 +319,24 @@ public class AllegroPublisher
             foreach (var offer in offers)
             {
                 var ean = offer.External?.Id ?? "";
+
+                // No external id => listed manually or by another tool. None of our business.
                 if (string.IsNullOrEmpty(ean))
                 {
                     foreign++;
                     continue;
                 }
 
-                if (!csvEans.Contains(ean))
+                // Never parsed => we have no grounds to judge it, so leave it alone.
+                if (!productByEan.TryGetValue(ean, out var product))
                 {
-                    orphans.Add(new OrphanOffer(offer.Id, ean, offer.Name));
+                    unknown++;
+                    continue;
+                }
+
+                if (!passesOptions(product))
+                {
+                    orphans.Add(new OrphanOffer(offer.Id, ean, offer.Name, ExplainRejection(product, options)));
                 }
             }
 
@@ -329,9 +346,42 @@ public class AllegroPublisher
             }
         }
 
-        log?.Invoke($"Scanned {total} active offers — {foreign} not listed by this app (left alone), " +
-                    $"{orphans.Count} ours but missing from {CSVMaker.FileName}.");
+        log?.Invoke($"Scanned {total} active offers — {foreign} not listed by this app, {unknown} not in the " +
+                    $"parsed catalogue (both left alone), {orphans.Count} no longer pass the CSV options.");
         return orphans;
+    }
+
+    /// <summary>Which CSV option rejected this product. Mirrors <see cref="CSVMaker.FilterProduct"/>.</summary>
+    private static string ExplainRejection(ProductInfo product, CSVOptions options)
+    {
+        var category = options.CategoriesBlackList
+            .FirstOrDefault(rule => product.CategoriesUrls.Any(url => url.Contains(rule)));
+        if (category is not null)
+        {
+            return $"category black list: {category}";
+        }
+
+        if (options.EansBlackList.Contains(product.EAN))
+        {
+            return "EAN black list";
+        }
+
+        if (product.EAN.Contains("—"))
+        {
+            return "invalid EAN";
+        }
+
+        if (product.Count < options.MinimalProductCount)
+        {
+            return $"stock {product.Count} < {options.MinimalProductCount}";
+        }
+
+        if (product.Price < options.MinimalPrice)
+        {
+            return $"price {product.Price.ToString(CultureInfo.InvariantCulture)} < {options.MinimalPrice.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        return "does not pass the CSV options";
     }
 
     /// <summary>Takes the given offers off sale. Returns how many succeeded.</summary>

@@ -250,10 +250,10 @@
 
                 <hr />
 
-                <h6 class="fw-semibold">Unlisted offers</h6>
+                <h6 class="fw-semibold">Offers that should no longer be on sale</h6>
                 <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
                     <button class="btn btn-outline-secondary" disabled="@(!allegro.Settings.IsConnected || _isScanning)" @onclick="ScanOrphanOffers">
-                        @(_isScanning ? "Scanning..." : "Scan for unlisted offers")
+                        @(_isScanning ? "Scanning..." : "Scan active offers")
                     </button>
                     @if (_orphanOffers is { Count: > 0 })
                     {
@@ -263,28 +263,29 @@
                     }
                 </div>
                 <div class="form-text mb-2">
-                    Finds <strong>active</strong> offers managed by this app (they carry an <strong>external ID</strong>)
-                    whose EAN is not in <code>@CSVMaker.FileName</code> — accidentally created offers, or ones no longer in
-                    your assortment. Offers listed <strong>manually or by another tool</strong> have no external ID and are
-                    never reported or touched. Scanning is read-only; nothing changes until you press End.
+                    Finds <strong>active</strong> offers listed by this app (they carry an <strong>external ID</strong>)
+                    whose product is in the parsed catalogue but <strong>no longer passes the CSV options above</strong> —
+                    a blacklisted category, a blacklisted EAN, stock below the minimum, and so on. Offers listed
+                    <strong>manually or by another tool</strong>, and products the parser has never seen, are never
+                    reported or touched. Scanning is read-only; nothing changes until you press End.
                 </div>
 
                 @if (_orphanOffers is not null)
                 {
                     @if (_orphanOffers.Count == 0)
                     {
-                        <div class="alert alert-success py-2">No unlisted offers — every active offer is in the CSV.</div>
+                        <div class="alert alert-success py-2">Nothing to end — every active offer still passes the CSV options.</div>
                     }
                     else
                     {
                         <div class="alert alert-warning py-2">
-                            <strong>@_orphanOffers.Count</strong> active offer(s) are not in the CSV. Review before ending —
-                            this takes them off sale.
+                            <strong>@_orphanOffers.Count</strong> active offer(s) no longer pass the CSV options.
+                            Check the reason on each before ending — this takes them off sale.
                         </div>
                         <div class="table-responsive mb-3" style="max-height: 260px; overflow-y: auto;">
                             <table class="table table-sm table-hover align-middle mb-0">
                                 <thead class="table-light">
-                                    <tr><th>Offer</th><th>EAN</th><th class="text-end">Id</th></tr>
+                                    <tr><th>Offer</th><th>EAN</th><th>Reason</th><th class="text-end">Id</th></tr>
                                 </thead>
                                 <tbody>
                                     @foreach (var offer in _orphanOffers)
@@ -292,6 +293,7 @@
                                         <tr>
                                             <td>@(string.IsNullOrWhiteSpace(offer.Name) ? "—" : offer.Name)</td>
                                             <td><code>@offer.Ean</code></td>
+                                            <td class="small text-muted">@offer.Reason</td>
                                             <td class="text-end">
                                                 <a href="https://allegro.pl/oferta/@offer.Id" target="_blank">@offer.Id</a>
                                             </td>
