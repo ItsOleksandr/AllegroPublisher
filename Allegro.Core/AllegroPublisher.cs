@@ -270,12 +270,7 @@ public class AllegroPublisher
 
     /// <summary>An active offer that products.csv knows nothing about.</summary>
     public record OrphanOffer(string Id, string Ean, string Name);
-
-    /// <summary>
-    /// Finds active offers whose EAN is missing from <c>products.csv</c> — accidentally created
-    /// offers, or ones no longer in the assortment. <see cref="PublishAsync"/> never touches
-    /// these, so they keep selling. Read-only: call <see cref="EndOffersAsync"/> to act on them.
-    /// </summary>
+    
     public async Task<List<OrphanOffer>> FindOrphanOffersAsync(Action<string>? log = null)
     {
         await EnsureValidTokenAsync();
@@ -292,7 +287,7 @@ public class AllegroPublisher
         }
 
         var orphans = new List<OrphanOffer>();
-        int total = 0;
+        int total = 0, foreign = 0;
         const int limit = 100;
 
         for (int offset = 0; ; offset += limit)
@@ -316,7 +311,13 @@ public class AllegroPublisher
             foreach (var offer in offers)
             {
                 var ean = offer.External?.Id ?? "";
-                if (string.IsNullOrEmpty(ean) || !csvEans.Contains(ean))
+                if (string.IsNullOrEmpty(ean))
+                {
+                    foreign++;
+                    continue;
+                }
+
+                if (!csvEans.Contains(ean))
                 {
                     orphans.Add(new OrphanOffer(offer.Id, ean, offer.Name));
                 }
@@ -328,7 +329,8 @@ public class AllegroPublisher
             }
         }
 
-        log?.Invoke($"Scanned {total} active offers — {orphans.Count} are not in {CSVMaker.FileName}.");
+        log?.Invoke($"Scanned {total} active offers — {foreign} not listed by this app (left alone), " +
+                    $"{orphans.Count} ours but missing from {CSVMaker.FileName}.");
         return orphans;
     }
 

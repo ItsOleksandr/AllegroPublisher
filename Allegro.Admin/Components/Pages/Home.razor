@@ -263,9 +263,10 @@
                     }
                 </div>
                 <div class="form-text mb-2">
-                    Finds <strong>active</strong> offers whose EAN is not in <code>@CSVMaker.FileName</code> — accidentally created
-                    offers, or ones no longer in your assortment. Publishing never touches these, so they keep selling.
-                    Scanning is read-only; nothing changes until you press End.
+                    Finds <strong>active</strong> offers managed by this app (they carry an <strong>external ID</strong>)
+                    whose EAN is not in <code>@CSVMaker.FileName</code> — accidentally created offers, or ones no longer in
+                    your assortment. Offers listed <strong>manually or by another tool</strong> have no external ID and are
+                    never reported or touched. Scanning is read-only; nothing changes until you press End.
                 </div>
 
                 @if (_orphanOffers is not null)
@@ -290,7 +291,7 @@
                                     {
                                         <tr>
                                             <td>@(string.IsNullOrWhiteSpace(offer.Name) ? "—" : offer.Name)</td>
-                                            <td><code>@(string.IsNullOrWhiteSpace(offer.Ean) ? "no EAN" : offer.Ean)</code></td>
+                                            <td><code>@offer.Ean</code></td>
                                             <td class="text-end">
                                                 <a href="https://allegro.pl/oferta/@offer.Id" target="_blank">@offer.Id</a>
                                             </td>
