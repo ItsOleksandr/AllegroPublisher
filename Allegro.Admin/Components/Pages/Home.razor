@@ -93,10 +93,22 @@
                         <input id="minPriceInput" class="form-control" type="number" step="0.01" min="0" @bind="_csvOptions.MinimalPrice" />
                         <div class="form-text">Products priced below this value are excluded from the CSV.</div>
                     </div>
-                    <div class="col-6">
-                        <label class="form-label" for="categoryBlackListInput">Category black list</label>
-                        <input id="categoryBlackListInput" class="form-control" type="text" @bind="CategoriesBlackListText" placeholder="e.g. Electronics, Toys" />
-                        <div class="form-text">Comma-separated category names to exclude from the CSV.</div>
+                </div>
+
+                <div class="row g-3 mb-2">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Category black list</label>
+                        <TagListEditor Items="_csvOptions.CategoriesBlackList"
+                                       Placeholder="e.g. Electronics"
+                                       EmptyText="Empty — no category is excluded." />
+                        <div class="form-text">A product is excluded when any of its category urls contains one of these.</div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">EAN black list</label>
+                        <TagListEditor Items="_csvOptions.EansBlackList"
+                                       Placeholder="e.g. 5901234123457"
+                                       EmptyText="Empty — no EAN is excluded." />
+                        <div class="form-text">Products with these exact EANs are excluded from the CSV.</div>
                     </div>
                 </div>
                 <div class="small text-muted mb-2">
@@ -236,6 +248,60 @@
                     (new offers are not created).
                 </div>
 
+                <hr />
+
+                <h6 class="fw-semibold">Unlisted offers</h6>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                    <button class="btn btn-outline-secondary" disabled="@(!allegro.Settings.IsConnected || _isScanning)" @onclick="ScanOrphanOffers">
+                        @(_isScanning ? "Scanning..." : "Scan for unlisted offers")
+                    </button>
+                    @if (_orphanOffers is { Count: > 0 })
+                    {
+                        <button class="btn btn-danger" disabled="@_isEndingOrphans" @onclick="EndOrphanOffers">
+                            @(_isEndingOrphans ? "Ending..." : $"End all {_orphanOffers.Count}")
+                        </button>
+                    }
+                </div>
+                <div class="form-text mb-2">
+                    Finds <strong>active</strong> offers whose EAN is not in <code>@CSVMaker.FileName</code> — accidentally created
+                    offers, or ones no longer in your assortment. Publishing never touches these, so they keep selling.
+                    Scanning is read-only; nothing changes until you press End.
+                </div>
+
+                @if (_orphanOffers is not null)
+                {
+                    @if (_orphanOffers.Count == 0)
+                    {
+                        <div class="alert alert-success py-2">No unlisted offers — every active offer is in the CSV.</div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-warning py-2">
+                            <strong>@_orphanOffers.Count</strong> active offer(s) are not in the CSV. Review before ending —
+                            this takes them off sale.
+                        </div>
+                        <div class="table-responsive mb-3" style="max-height: 260px; overflow-y: auto;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr><th>Offer</th><th>EAN</th><th class="text-end">Id</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var offer in _orphanOffers)
+                                    {
+                                        <tr>
+                                            <td>@(string.IsNullOrWhiteSpace(offer.Name) ? "—" : offer.Name)</td>
+                                            <td><code>@(string.IsNullOrWhiteSpace(offer.Ean) ? "no EAN" : offer.Ean)</code></td>
+                                            <td class="text-end">
+                                                <a href="https://allegro.pl/oferta/@offer.Id" target="_blank">@offer.Id</a>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+
                 <pre class="bg-dark text-light p-3 rounded mb-0" style="max-height: 240px; overflow-y: auto; font-size: 0.8rem; white-space: pre-wrap;">@(allegro.Logs.Count == 0 ? "No publish activity yet." : string.Join("\n", allegro.Logs))</pre>
             </div>
         </div>
@@ -263,13 +329,9 @@
 
     private AllegroPublishService.DeviceFlowInfo? _deviceInfo;
 
-    private string CategoriesBlackListText
-    {
-        get => string.Join(", ", _csvOptions.CategoriesBlackList);
-        set => _csvOptions.CategoriesBlackList = value
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToList();
-    }
+    private List<AllegroPublisher.OrphanOffer>? _orphanOffers;
+    private bool _isScanning;
+    private bool _isEndingOrphans;
 
     protected override void OnInitialized()
     {
@@ -319,6 +381,48 @@
         catch (Exception e)
         {
             toastService.ShowError(e.Message);
+        }
+    }
+
+    private async Task ScanOrphanOffers()
+    {
+        _isScanning = true;
+        try
+        {
+            _orphanOffers = await allegro.FindOrphanOffersAsync();
+            toastService.ShowInfo($"Found {_orphanOffers.Count} unlisted offer(s).");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            _isScanning = false;
+        }
+    }
+
+    private async Task EndOrphanOffers()
+    {
+        if (_orphanOffers is null or { Count: 0 })
+        {
+            return;
+        }
+
+        _isEndingOrphans = true;
+        try
+        {
+            var ended = await allegro.EndOffersAsync(_orphanOffers.Select(o => o.Id));
+            toastService.ShowSuccess($"Ended {ended} offer(s).");
+            _orphanOffers = null; // force a rescan so the list can't go stale
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            _isEndingOrphans = false;
         }
     }
 

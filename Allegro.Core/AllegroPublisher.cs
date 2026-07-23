@@ -268,6 +268,94 @@ public class AllegroPublisher
         return rows;
     }
 
+    /// <summary>An active offer that products.csv knows nothing about.</summary>
+    public record OrphanOffer(string Id, string Ean, string Name);
+
+    /// <summary>
+    /// Finds active offers whose EAN is missing from <c>products.csv</c> — accidentally created
+    /// offers, or ones no longer in the assortment. <see cref="PublishAsync"/> never touches
+    /// these, so they keep selling. Read-only: call <see cref="EndOffersAsync"/> to act on them.
+    /// </summary>
+    public async Task<List<OrphanOffer>> FindOrphanOffersAsync(Action<string>? log = null)
+    {
+        await EnsureValidTokenAsync();
+
+        var csvEans = ReadCsvRows(log)
+            .Select(r => r.Ean)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (csvEans.Count == 0)
+        {
+            // Without this guard an empty/failed CSV would mark the whole assortment as orphaned.
+            throw new InvalidOperationException(
+                $"{CSVMaker.FileName} has no rows — refusing to scan, every offer would look orphaned.");
+        }
+
+        var orphans = new List<OrphanOffer>();
+        int total = 0;
+        const int limit = 100;
+
+        for (int offset = 0; ; offset += limit)
+        {
+            var request = CreateApiRequest(HttpMethod.Get,
+                $"{ApiBase}/sale/offers?publication.status=ACTIVE&limit={limit}&offset={offset}");
+            var response = await _http.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"Failed to list offers ({(int)response.StatusCode}): {body}");
+            }
+
+            var offers = JsonSerializer.Deserialize<OffersListResponse>(body)?.Offers ?? new List<OfferListItem>();
+            if (offers.Count == 0)
+            {
+                break;
+            }
+
+            total += offers.Count;
+            foreach (var offer in offers)
+            {
+                var ean = offer.External?.Id ?? "";
+                if (string.IsNullOrEmpty(ean) || !csvEans.Contains(ean))
+                {
+                    orphans.Add(new OrphanOffer(offer.Id, ean, offer.Name));
+                }
+            }
+
+            if (offers.Count < limit)
+            {
+                break;
+            }
+        }
+
+        log?.Invoke($"Scanned {total} active offers — {orphans.Count} are not in {CSVMaker.FileName}.");
+        return orphans;
+    }
+
+    /// <summary>Takes the given offers off sale. Returns how many succeeded.</summary>
+    public async Task<int> EndOffersAsync(IEnumerable<string> offerIds, Action<string>? log = null)
+    {
+        await EnsureValidTokenAsync();
+
+        int ended = 0;
+        foreach (var offerId in offerIds)
+        {
+            try
+            {
+                await SetOfferActiveAsync(offerId, false);
+                ended++;
+                log?.Invoke($"Ended offer {offerId}.");
+            }
+            catch (Exception e)
+            {
+                log?.Invoke($"Failed to end offer {offerId}: {e.Message}");
+            }
+        }
+
+        log?.Invoke($"Ended {ended} offers.");
+        return ended;
+    }
+
     /// <summary>An offer we matched, plus whether it is currently visible to buyers.</summary>
     private record OfferRef(string Id, string Status)
     {
@@ -426,6 +514,7 @@ public class AllegroPublisher
     private class OfferListItem
     {
         [JsonPropertyName("id")] public string Id { get; set; } = "";
+        [JsonPropertyName("name")] public string Name { get; set; } = "";
         [JsonPropertyName("external")] public ExternalId? External { get; set; }
         [JsonPropertyName("publication")] public OfferPublication? Publication { get; set; }
     }

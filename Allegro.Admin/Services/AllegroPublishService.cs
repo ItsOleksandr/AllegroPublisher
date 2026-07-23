@@ -46,6 +46,13 @@ public class AllegroPublishService
         return new DeviceFlowInfo(auth.UserCode, auth.VerificationUri);
     }
 
+    /// <summary>Active offers on Allegro that products.csv doesn't know about. Read-only.</summary>
+    public Task<List<AllegroPublisher.OrphanOffer>> FindOrphanOffersAsync() =>
+        _publisher.FindOrphanOffersAsync(Log);
+
+    public Task<int> EndOffersAsync(IEnumerable<string> offerIds) =>
+        _publisher.EndOffersAsync(offerIds, Log);
+
     public async Task<int> PublishAsync()
     {
         if (IsPublishing)

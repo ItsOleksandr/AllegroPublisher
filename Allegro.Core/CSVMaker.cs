@@ -27,7 +27,8 @@ public static class CSVMaker
         return x => !x.CategoriesUrls
                                .Any(categoryUrl => options.CategoriesBlackList
                                    .Any(categoryUrl
-                                       .Contains)) 
+                                       .Contains))
+                           && !options.EansBlackList.Contains(x.EAN)
                            && x.Count >= options.MinimalProductCount
                            && x.Price >= options.MinimalPrice
                            && !x.EAN.Contains("—");

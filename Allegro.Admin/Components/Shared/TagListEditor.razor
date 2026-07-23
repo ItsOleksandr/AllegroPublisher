@@ -1,0 +1,73 @@
+@* Chip-style editor for a list of strings: type + Enter to add, × to remove. *@
+
+<div>
+    <div class="input-group input-group-sm mb-2">
+        <input class="form-control"
+               placeholder="@Placeholder"
+               @bind="_newItem"
+               @bind:event="oninput"
+               @onkeydown="OnKeyDown" />
+        <button class="btn btn-outline-primary" type="button"
+                disabled="@string.IsNullOrWhiteSpace(_newItem)"
+                @onclick="Add">
+            Add
+        </button>
+    </div>
+
+    @if (Items.Count == 0)
+    {
+        <div class="form-text fst-italic">@EmptyText</div>
+    }
+    else
+    {
+        <div class="d-flex flex-wrap gap-1">
+            @foreach (var item in Items)
+            {
+                var current = item;
+                <span class="badge bg-light text-dark border d-inline-flex align-items-center gap-1">
+                    <span>@current</span>
+                    <button type="button" class="btn-close btn-close-sm"
+                            style="font-size: .55rem;"
+                            aria-label="Remove @current"
+                            @onclick="() => Remove(current)"></button>
+                </span>
+            }
+        </div>
+        <div class="form-text">@Items.Count item(s). Paste a comma-separated list to add several at once.</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<string> Items { get; set; } = new();
+    [Parameter] public string Placeholder { get; set; } = "Add value…";
+    [Parameter] public string EmptyText { get; set; } = "Empty — nothing is excluded.";
+
+    private string _newItem = "";
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            Add();
+        }
+    }
+
+    private void Add()
+    {
+        // Accept a single value or a pasted comma/newline separated list.
+        var values = _newItem
+            .Split(new[] { ',', ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        foreach (var value in values)
+        {
+            if (!Items.Contains(value))
+            {
+                Items.Add(value);
+            }
+        }
+
+        _newItem = "";
+    }
+
+    private void Remove(string item) => Items.Remove(item);
+}

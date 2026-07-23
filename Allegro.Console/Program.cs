@@ -56,7 +56,7 @@ urls.RemoveAll(x => responseParsing.BlackListUrls.Contains(x));
 SaverExtensions.Urls.Value = urls;
 SaverExtensions.Urls.Write();
 
-CSVMaker.MakeCSV(responseParsing.Products.Values.ToList(),SaverExtensions.CSVOptions.Value);
+CSVMaker.MakeCSV(SaverExtensions.Products.Read().Values.ToList(),SaverExtensions.CSVOptions.Value);
 
 var publisher = new AllegroPublisher();
 
