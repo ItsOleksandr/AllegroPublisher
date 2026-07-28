@@ -15,7 +15,7 @@ public static class CSVMaker
             var isValid = filter.Invoke(productInfo);
             if (!isValid) productInfo.Count = 0;
             
-            productInfo.Price *= options.MultiplierPrice;
+            productInfo.Price *= options.GetMultiplier(productInfo.Price);
         }
     
         var result = GetCSV(products);
@@ -31,6 +31,7 @@ public static class CSVMaker
                            && !options.EansBlackList.Contains(x.EAN)
                            && x.Count >= options.MinimalProductCount
                            && x.Price >= options.MinimalPrice
+                           && (options.MaxMinOrderQuantity <= 0 || x.MinOrderQuantity < options.MaxMinOrderQuantity)
                            && !x.EAN.Contains("—");
     }
     

@@ -84,15 +84,50 @@
                         <div class="form-text">Categories with fewer parsed products than this are excluded from the CSV.</div>
                     </div>
                     <div class="col-6">
-                        <label class="form-label" for="priceMultiplierInput">Price multiplier</label>
-                        <input id="priceMultiplierInput" class="form-control" type="number" step="0.01" min="0" @bind="_csvOptions.MultiplierPrice" />
-                        <div class="form-text">Multiplies the parsed price by this factor before writing it to the CSV.</div>
-                    </div>
-                    <div class="col-6">
                         <label class="form-label" for="minPriceInput">Minimal price</label>
                         <input id="minPriceInput" class="form-control" type="number" step="0.01" min="0" @bind="_csvOptions.MinimalPrice" />
                         <div class="form-text">Products priced below this value are excluded from the CSV.</div>
                     </div>
+                    <div class="col-6">
+                        <label class="form-label" for="maxMinOrderInput">Max minimum order</label>
+                        <input id="maxMinOrderInput" class="form-control" type="number" min="0" @bind="_csvOptions.MaxMinOrderQuantity" />
+                        <div class="form-text">Excludes products whose required minimum order is this value or higher. 0 = off.</div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Price multipliers</label>
+                    <div class="form-text mb-2">
+                        The parsed price is multiplied by the first tier whose <strong>up-to price</strong> is ≥ the price
+                        (lowest first). Prices above every tier use the <strong>default multiplier</strong>.
+                    </div>
+                    <table class="table table-sm align-middle mb-2" style="max-width: 520px;">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Price up to</th>
+                                <th>× multiplier</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var tier in _csvOptions.PriceMultipliers.OrderBy(t => t.MaxPrice).ToList())
+                            {
+                                <tr>
+                                    <td><input class="form-control form-control-sm" type="number" step="0.01" min="0" @bind="tier.MaxPrice" /></td>
+                                    <td><input class="form-control form-control-sm" type="number" step="0.01" min="0" @bind="tier.Multiplier" /></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => _csvOptions.PriceMultipliers.Remove(tier)">✕</button>
+                                    </td>
+                                </tr>
+                            }
+                            <tr>
+                                <td class="text-muted small align-middle">above → default</td>
+                                <td><input class="form-control form-control-sm" type="number" step="0.01" min="0" @bind="_csvOptions.DefaultMultiplier" /></td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="AddPriceTier">Add tier</button>
                 </div>
 
                 <div class="row g-3 mb-2">
@@ -350,6 +385,14 @@
     public void Dispose()
     {
         _logRefreshTimer?.Dispose();
+    }
+
+    private void AddPriceTier()
+    {
+        var nextBound = _csvOptions.PriceMultipliers.Count == 0
+            ? 10m
+            : _csvOptions.PriceMultipliers.Max(t => t.MaxPrice) + 10m;
+        _csvOptions.PriceMultipliers.Add(new PriceTier { MaxPrice = nextBound, Multiplier = 1m });
     }
 
     private void RegenerateCsv()

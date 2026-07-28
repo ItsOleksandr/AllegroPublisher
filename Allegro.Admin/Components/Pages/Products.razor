@@ -173,6 +173,9 @@
         if (p.Price < _csvOptions.MinimalPrice)
             return new Status("Below min price", "bg-warning text-dark");
 
+        if (_csvOptions.MaxMinOrderQuantity > 0 && p.MinOrderQuantity >= _csvOptions.MaxMinOrderQuantity)
+            return new Status("Min order too high", "bg-warning text-dark");
+
         return new Status("Included", "bg-success");
     }
 }

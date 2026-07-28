@@ -20,8 +20,6 @@ public class ProductParcer
 
         };
 
-        // New headless loads extensions (captcha/vpn) but does NOT need the crash-prone Xvfb display.
-        // Only a manual login session (viewed over VNC) needs a real visible window on :99.
         if (!visible)
         {
             args.Add("--headless=new");

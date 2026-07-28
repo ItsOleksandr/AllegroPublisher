@@ -63,6 +63,7 @@ public class ProductExtracter
 
             var price = await _page.Locator("meta[property='product:price:amount']").GetAttributeAsync("content") ?? "";
             var categoriesLocator = await _page.Locator("span.posted_in a").AllAsync();
+            var minOrderCount = await _page.Locator("div.quantity input").First.GetAttributeAsync("value") ?? "";
 
             var categoriesUrl = new List<string>();
             foreach (ILocator locator in categoriesLocator)
@@ -75,7 +76,7 @@ public class ProductExtracter
             return new ProductInfo
             {
                 Price = decimal.Parse(price, CultureInfo.InvariantCulture), Name = name, Count = int.Parse(countString),
-                EAN = ean, CategoriesUrls = categoriesUrl.ToArray(), Url = url
+                EAN = ean, CategoriesUrls = categoriesUrl.ToArray(), Url = url,MinOrderQuantity = int.Parse(minOrderCount)
             };
         }
         catch (InvalidProductException)

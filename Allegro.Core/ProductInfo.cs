@@ -8,4 +8,5 @@ public class ProductInfo
     public int Count { get; set; }
     public string EAN { get; set; }
     public string[] CategoriesUrls { get; set; } = Array.Empty<string>();
+    public int MinOrderQuantity { get; set; } = 0;
 }

@@ -420,6 +420,11 @@ public class AllegroPublisher
             return $"price {product.Price.ToString(CultureInfo.InvariantCulture)} < {options.MinimalPrice.ToString(CultureInfo.InvariantCulture)}";
         }
 
+        if (options.MaxMinOrderQuantity > 0 && product.MinOrderQuantity >= options.MaxMinOrderQuantity)
+        {
+            return $"min order {product.MinOrderQuantity} >= {options.MaxMinOrderQuantity}";
+        }
+
         return "does not pass the CSV options";
     }
 
