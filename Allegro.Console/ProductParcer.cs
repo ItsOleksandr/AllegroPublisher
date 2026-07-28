@@ -86,6 +86,11 @@ public class ProductParcer
                 SaverExtensions.LastParse.Write();
                 continue;
             }
+            catch(ParseProductException e)
+            {
+                System.Console.WriteLine($"Can`t parse product: {url} {e.Message}");
+                continue;
+            }
             catch (ParserException)
             {
                 break;

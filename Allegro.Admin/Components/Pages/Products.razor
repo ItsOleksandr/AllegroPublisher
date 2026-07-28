@@ -70,7 +70,7 @@
                             <th>Product</th>
                             <th class="text-end">Price</th>
                             <th class="text-end">Count</th>
-<th class="text-end">Min order</th>
+                            <th class="text-end">Min order</th>
                             <th>EAN</th>
                             <th>Status</th>
                         </tr>
@@ -93,7 +93,8 @@
                                 </td>
                                 <td class="text-end">@p.Price.ToString("0.##")</td>
                                 <td class="text-end">@p.Count</td>
-          <td class="text-end">@p.MinOrderQuantity</td>                      <td><code>@(string.IsNullOrWhiteSpace(p.EAN) ? "—" : p.EAN)</code></td>
+                                <td class="text-end">@p.MinOrderQuantity</td>                      
+                                <td><code>@(string.IsNullOrWhiteSpace(p.EAN) ? "—" : p.EAN)</code></td>
                                 <td>
                                     <span class="badge @status.CssClass">@status.Label</span>
                                     @if (status.BlacklistRule is not null)

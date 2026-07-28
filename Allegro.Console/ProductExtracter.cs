@@ -46,11 +46,13 @@ public class ProductExtracter
                 .InnerTextAsync(new LocatorInnerTextOptions() { Timeout = 5000 });
             var first = await Task.WhenAny(notAvailableTask, countRawTask);
             string countString = "";
+            string minOrderCount = "0";
             if (!first.IsCompleted) throw new Exception("No complete");
             if (first == countRawTask)
             {
                 var countRaw = await countRawTask;
                 countString = Regex.Match(countRaw.Trim(), @"\d+").Value;
+                minOrderCount = await _page.Locator("div.quantity input").First.GetAttributeAsync("value") ?? "0";
             }
             else if (first == notAvailableTask)
             {
@@ -58,12 +60,11 @@ public class ProductExtracter
             }
             else
             {
-                throw new Exception("Unknown error");
+                throw new ParseProductException("No exist count product and form");
             }
 
             var price = await _page.Locator("meta[property='product:price:amount']").GetAttributeAsync("content") ?? "";
             var categoriesLocator = await _page.Locator("span.posted_in a").AllAsync();
-            var minOrderCount = await _page.Locator("div.quantity input").First.GetAttributeAsync("value") ?? "";
 
             var categoriesUrl = new List<string>();
             foreach (ILocator locator in categoriesLocator)
@@ -187,3 +188,5 @@ public class ProductAlreadyHandledException : Exception
 }
 
 public class ParserException : Exception{}
+
+public class ParseProductException(string message = "") : Exception(message){}
