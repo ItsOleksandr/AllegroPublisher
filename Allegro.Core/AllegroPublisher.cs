@@ -127,17 +127,55 @@ public class AllegroPublisher
         return false;
     }
 
+    // Serializes refresh across concurrent operations within one process, so the web app can't
+    // race itself and burn a single-use refresh token twice.
+    private static readonly SemaphoreSlim _refreshLock = new(1, 1);
+
     private async Task EnsureValidTokenAsync()
     {
-        if (!Settings.IsConnected)
+        await _refreshLock.WaitAsync();
+        try
         {
-            throw new InvalidOperationException("Not connected to Allegro. Connect the account first.");
-        }
-        if (DateTime.UtcNow < Settings.AccessTokenExpiresUtc.AddMinutes(-1) && !string.IsNullOrEmpty(Settings.AccessToken))
-        {
-            return;
-        }
+            // The nightly console and the web panel share allegro_settings.txt, and Allegro
+            // refresh tokens are single-use: each refresh invalidates the previous one. Always
+            // start from the freshest copy on disk, or we'd refresh with a token the other
+            // process already rotated away - the usual cause of "reconnect the account".
+            SaverExtensions.AllegroSettings.Read();
 
+            if (!Settings.IsConnected)
+            {
+                throw new InvalidOperationException("Not connected to Allegro. Connect the account first.");
+            }
+            if (DateTime.UtcNow < Settings.AccessTokenExpiresUtc.AddMinutes(-5) && !string.IsNullOrEmpty(Settings.AccessToken))
+            {
+                return;
+            }
+
+            if (await TryRefreshAsync())
+            {
+                return;
+            }
+
+            // The other process may have refreshed at the same moment and written a valid token.
+            // Reload and, if it's now fresh, use it; otherwise try one more refresh before giving up.
+            SaverExtensions.AllegroSettings.Read();
+            if (DateTime.UtcNow < Settings.AccessTokenExpiresUtc.AddMinutes(-5) && !string.IsNullOrEmpty(Settings.AccessToken))
+            {
+                return;
+            }
+            if (!await TryRefreshAsync())
+            {
+                throw new InvalidOperationException("Could not refresh the Allegro token. Reconnect the account.");
+            }
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
+    }
+
+    private async Task<bool> TryRefreshAsync()
+    {
         var request = new HttpRequestMessage(HttpMethod.Post, $"{AuthBase}/auth/oauth/token")
         {
             Content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -152,10 +190,11 @@ public class AllegroPublisher
         var body = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Could not refresh the Allegro token ({(int)response.StatusCode}). Reconnect the account. {body}");
+            return false;
         }
 
         StoreToken(JsonSerializer.Deserialize<TokenResponse>(body)!);
+        return true;
     }
 
     private void StoreToken(TokenResponse token)
