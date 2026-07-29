@@ -15,6 +15,7 @@ builder.Services.AddScoped<ToastService>();
 builder.Services.AddSingleton<Saver<SaveData>>( _ => new Saver<SaveData>("admin_options.txt"));
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<AllegroPublishService>();
+builder.Services.AddHostedService<AllegroTokenRefresher>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {

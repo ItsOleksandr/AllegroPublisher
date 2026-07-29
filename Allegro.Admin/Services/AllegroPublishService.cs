@@ -26,6 +26,9 @@ public class AllegroPublishService
 
     public void SaveSettings() => _publisher.SaveSettings();
 
+    /// <summary>Keeps the stored token alive; called on a timer by <see cref="AllegroTokenRefresher"/>.</summary>
+    public Task<bool> KeepAliveAsync(TimeSpan refreshWithin) => _publisher.KeepAliveAsync(refreshWithin, Log);
+
     public void ClearLogs() => _logs.Clear();
 
     private void Log(string message)

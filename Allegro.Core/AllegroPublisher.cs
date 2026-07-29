@@ -151,7 +151,8 @@ public class AllegroPublisher
                 return;
             }
 
-            if (await TryRefreshAsync())
+            string? lastError = null;
+            if (await TryRefreshAsync(e => lastError = e))
             {
                 return;
             }
@@ -163,9 +164,9 @@ public class AllegroPublisher
             {
                 return;
             }
-            if (!await TryRefreshAsync())
+            if (!await TryRefreshAsync(e => lastError = e))
             {
-                throw new InvalidOperationException("Could not refresh the Allegro token. Reconnect the account.");
+                throw new InvalidOperationException($"Could not refresh the Allegro token. Reconnect the account. {lastError}");
             }
         }
         finally
@@ -174,8 +175,45 @@ public class AllegroPublisher
         }
     }
 
-    public async Task<bool> TryRefreshAsync(Action<string> log = null)
+    /// <summary>
+    /// Proactively refreshes the token while there is still time, so it never lapses on its own.
+    /// Meant to be called on a timer by a single long-running process (the web app). Refreshes
+    /// only when the access token is within <paramref name="refreshWithin"/> of expiry, so it
+    /// piggybacks on whatever the console already did and rarely races it. Returns true if the
+    /// stored token is valid afterwards.
+    /// </summary>
+    public async Task<bool> KeepAliveAsync(TimeSpan refreshWithin, Action<string>? log = null)
     {
+        await _refreshLock.WaitAsync();
+        try
+        {
+            SaverExtensions.AllegroSettings.Read();
+
+            if (!Settings.IsConnected)
+            {
+                return false;
+            }
+            if (DateTime.UtcNow < Settings.AccessTokenExpiresUtc - refreshWithin && !string.IsNullOrEmpty(Settings.AccessToken))
+            {
+                return true; // still fresh enough - leave it alone
+            }
+
+            return await TryRefreshAsync(log);
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
+    }
+
+    public async Task<bool> TryRefreshAsync(Action<string>? log = null)
+    {
+        if (string.IsNullOrEmpty(Settings.RefreshToken))
+        {
+            log?.Invoke("no refresh token stored");
+            return false;
+        }
+
         var request = new HttpRequestMessage(HttpMethod.Post, $"{AuthBase}/auth/oauth/token")
         {
             Content = new FormUrlEncodedContent(new Dictionary<string, string>
