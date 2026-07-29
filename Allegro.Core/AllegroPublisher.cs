@@ -174,7 +174,7 @@ public class AllegroPublisher
         }
     }
 
-    private async Task<bool> TryRefreshAsync()
+    public async Task<bool> TryRefreshAsync(Action<string> log = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, $"{AuthBase}/auth/oauth/token")
         {
@@ -190,6 +190,7 @@ public class AllegroPublisher
         var body = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
         {
+            log?.Invoke($"Refresh failed ({(int)response.StatusCode}): {body}");
             return false;
         }
 

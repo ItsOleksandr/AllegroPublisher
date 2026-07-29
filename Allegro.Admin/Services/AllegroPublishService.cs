@@ -70,4 +70,6 @@ public class AllegroPublishService
             IsPublishing = false;
         }
     }
+
+    public Task<bool> RefreshToken() => _publisher.TryRefreshAsync(Log);
 }

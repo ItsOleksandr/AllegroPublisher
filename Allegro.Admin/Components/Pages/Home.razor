@@ -263,6 +263,7 @@
                 <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
                     <button class="btn btn-outline-secondary" @onclick="SaveAllOptions">Save credentials</button>
                     <button class="btn btn-outline-primary" @onclick="ConnectAllegro">@(allegro.Settings.IsConnected ? "Reconnect account" : "Connect account")</button>
+                    <button class="btn btn-outline-primary" @onclick="RefreshTokenAllegro">Try refresh token</button>
                     <button class="btn btn-success" disabled="@(!allegro.Settings.IsConnected || allegro.IsPublishing)" @onclick="PublishToAllegro">
                         @(allegro.IsPublishing ? "Publishing..." : "Publish CSV to Allegro")
                     </button>
@@ -427,6 +428,20 @@
         catch (Exception e)
         {
             toastService.ShowError(e.Message);
+        }
+    }
+
+    private async Task RefreshTokenAllegro()
+    {
+        try
+        {
+            bool refreshed = await allegro.RefreshToken();
+            if (refreshed == false) throw new Exception();
+            toastService.ShowSuccess("Token is refreshed");
+        }
+        catch
+        {
+            toastService.ShowError("Can`t refresh allegro token");
         }
     }
 
