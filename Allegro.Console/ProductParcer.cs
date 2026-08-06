@@ -102,7 +102,7 @@ public class ProductParcer
                 continue;
             }
             if(product.Price < 0)
-                if(SaverExtensions.Products.Value[product.Url] is {} savedProduct) product.Price = savedProduct.Price;
+                if(SaverExtensions.Products.Value.TryGetValue(product.Url,out var savedProduct)) product.Price = savedProduct.Price;
             response.Products[product.Url] = product;
             SaverExtensions.LastParse.Value = response;
             SaverExtensions.LastParse.Write();

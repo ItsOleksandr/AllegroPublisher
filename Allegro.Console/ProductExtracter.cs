@@ -149,7 +149,7 @@ public class ProductExtracter
                 await MoveMouseInCircleAsync(_page, 400, 300, 100,60,2);
                 await Task.Delay(1500);
                 await _page.GetByText("Zaloguj się").First.ClickAsync();
-                await Task.Delay(2000);
+                await Task.Delay(5000);
                 await _page.GotoAsync(productUrl, _gotoOptions);
                 await Task.Delay(2000);
                 if (!await unAuthButton.IsVisibleAsync()) return;
