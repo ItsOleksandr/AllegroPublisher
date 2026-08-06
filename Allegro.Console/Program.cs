@@ -1,6 +1,9 @@
 ﻿using Allegro.Core;
 using Allegro.Console;
-
+// ProductParcer productParcers = new ProductParcer();
+// await productParcers.NewParse(["https://allenett.pl/produkt/wieszak-zawieszany-na-drzwi-do-szafki-zestaw-10-sztuk-xj6194/\n"],true);
+// Console.WriteLine("Done");
+// return;
 if (args.Contains("--configure-browser"))
 {
     Console.WriteLine("Starting browser ...");

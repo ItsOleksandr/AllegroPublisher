@@ -41,18 +41,20 @@ public class ProductExtracter
             var ean = (await _page.Locator("span.ean").InnerTextAsync()).Trim();
 
             var notAvailableTask = _page.Locator("form.ct-product-waitlist-form").First
-                .WaitForAsync(new LocatorWaitForOptions() { State = WaitForSelectorState.Visible, Timeout = 5000 });
+                .WaitForAsync(new LocatorWaitForOptions() { Timeout = 5000 });
             var countRawTask = _page.Locator("p.stock.in-stock").First
                 .InnerTextAsync(new LocatorInnerTextOptions() { Timeout = 5000 });
             var first = await Task.WhenAny(notAvailableTask, countRawTask);
             string countString = "";
             string minOrderCount = "0";
+            string price = "-1";
             if (!first.IsCompleted) throw new Exception("No complete");
             if (first == countRawTask)
             {
                 var countRaw = await countRawTask;
                 countString = Regex.Match(countRaw.Trim(), @"\d+").Value;
                 minOrderCount = await _page.Locator("div.quantity input").First.GetAttributeAsync("value") ?? "0";
+                price = await _page.Locator("meta[property='product:price:amount']").GetAttributeAsync("content") ?? "-1";
             }
             else if (first == notAvailableTask)
             {
@@ -63,7 +65,7 @@ public class ProductExtracter
                 throw new ParseProductException("No exist count product and form");
             }
 
-            var price = await _page.Locator("meta[property='product:price:amount']").GetAttributeAsync("content") ?? "";
+            
             var categoriesLocator = await _page.Locator("span.posted_in a").AllAsync();
 
             var categoriesUrl = new List<string>();
@@ -86,6 +88,7 @@ public class ProductExtracter
         }
         catch (Exception e)
         {
+            System.Console.WriteLine(e);
             throw new ProductAlreadyHandledException();
             // System.Console.WriteLine(e);
             // if (isUserStarts)

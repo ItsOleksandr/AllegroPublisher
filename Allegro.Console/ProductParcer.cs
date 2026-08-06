@@ -64,7 +64,7 @@ public class ProductParcer
     /// <param name="response">Must be a new object as it uses a static set for <see cref="SaverExtensions.LastParse"/> and may throw exception when modifying a list</param>
     public async Task<ParseResponse> FinishParse(ParseResponse response,bool isUserStarts)
     {
-        var browser = await CreateBrowserContext();
+        var browser = await CreateBrowserContext(isUserStarts);
         var page = await browser.NewPageAsync();
         
         ProductExtracter extracter = new ProductExtracter(page);
@@ -101,7 +101,8 @@ public class ProductParcer
                 if (isUserStarts) await Task.Delay(5000);
                 continue;
             }
-
+            if(product.Price < 0)
+                if(SaverExtensions.Products.Value[product.Url] is {} savedProduct) product.Price = savedProduct.Price;
             response.Products[product.Url] = product;
             SaverExtensions.LastParse.Value = response;
             SaverExtensions.LastParse.Write();
