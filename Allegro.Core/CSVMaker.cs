@@ -15,7 +15,8 @@ public static class CSVMaker
             var isValid = filter.Invoke(productInfo);
             if (!isValid) productInfo.Count = 0;
             
-            productInfo.Price *= options.GetMultiplier(productInfo.Price);
+            productInfo.Price = Math.Round(productInfo.Price * options.GetMultiplier(productInfo.Price), 2, MidpointRounding.AwayFromZero);
+
         }
     
         var result = GetCSV(products);
