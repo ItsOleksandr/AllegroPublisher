@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.Playwright;
 using Allegro.Core;
+using Microsoft.Extensions.Configuration;
+
 namespace Allegro.Console;
 
 public class ProductParcer
@@ -68,7 +70,7 @@ public class ProductParcer
         var page = await browser.NewPageAsync();
         
         ProductExtracter extracter = new ProductExtracter(page);
-
+        int failuresLogin = 0;
         for(; response.CurrentIndexUrl < response.AllUrls.Count; response.CurrentIndexUrl++)
         {
             var url = response.AllUrls[response.CurrentIndexUrl];
@@ -86,7 +88,7 @@ public class ProductParcer
                 SaverExtensions.LastParse.Write();
                 continue;
             }
-            catch(ParseProductException e)
+            catch (ParseProductException e)
             {
                 System.Console.WriteLine($"Can`t parse product: {url} {e.Message}");
                 continue;
@@ -94,6 +96,27 @@ public class ProductParcer
             catch (ParserException)
             {
                 break;
+            }
+            catch (MemberAccessException m)
+            {
+                failuresLogin++;
+                if (failuresLogin > 2)
+                {
+                    var config = new ConfigurationBuilder()
+                        .SetBasePath(AppContext.BaseDirectory) 
+                        .AddJsonFile("coresettings.json", optional: false, reloadOnChange: true)
+                        .Build();
+        
+                    string? botToken = config.GetSection("Telegram").GetSection("BotToken").Value ?? throw new FormatException("No botToken in coresettings.json");
+                    string? chatId = config.GetSection("Telegram").GetSection("ChatId").Value ?? throw new FormatException("No chatId in coresettings.json");
+                    var telegram = new TelegramNotify();
+                    await telegram.SendAsync(botToken, chatId, "Allegro parser:\n"+m);
+                    throw;
+                }
+                else
+                {
+                    continue;
+                }
             }
             catch (Exception e)
             {
