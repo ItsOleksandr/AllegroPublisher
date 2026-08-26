@@ -18,7 +18,7 @@ public class ProductExtracter
         try
         {
             await _page.GotoAsync(url, _gotoOptions);
-  await page.BringToFrontAsync();
+  await _page.BringToFrontAsync();
         }
         catch
         {
@@ -132,7 +132,7 @@ public class ProductExtracter
             {
                 await unAuthButton.ClickAsync();
                 await Task.Delay(4000);
-   await page.Mouse.WheelAsync(0, 500);
+   await _page.Mouse.WheelAsync(0, 500);
                 var pressOptions = new LocatorPressSequentiallyOptions() { Delay = 200 };
                 var userName = _page.Locator("#username");
                 await userName.ClearAsync();
