@@ -2,6 +2,8 @@
 using Allegro.Core;
 using Allegro.Console;
 
+bool isVisible = args.Contains("--visible");
+
 var testUrlArg = args.FirstOrDefault(x => x.StartsWith("--test-url="));
 if (testUrlArg is not null)
 {
@@ -9,11 +11,11 @@ if (testUrlArg is not null)
     Console.WriteLine($"Test parsing: {url}");
 
     var testParcer = new ProductParcer();
-    var testBrowser = await testParcer.CreateBrowserContext(true);
+    var testBrowser = await testParcer.CreateBrowserContext(isVisible);
     var testPage = await testBrowser.NewPageAsync();
     try
     {
-        var product = await new ProductExtracter(testPage).Extract(url, isUserStarts: false);
+        var product = await new ProductExtracter(testPage).Extract(url);
         Console.WriteLine("=== PARSED OK ===");
         Console.WriteLine(JsonSerializer.Serialize(product, new JsonSerializerOptions { WriteIndented = true }));
     }
@@ -32,7 +34,7 @@ if (args.Contains("--configure-browser"))
 {
     Console.WriteLine("Starting browser ...");
     ProductParcer productParcerConfigure = new ProductParcer();
-    var configureBrowser = await productParcerConfigure.CreateBrowserContext(visible: true);
+    var configureBrowser = await productParcerConfigure.CreateBrowserContext(isVisible);
     await configureBrowser.NewPageAsync();
     Console.WriteLine("Browser started");
     await Task.Delay(-1);
@@ -40,29 +42,28 @@ if (args.Contains("--configure-browser"))
     return;
 }
 
-string? startIndexArg = args.FirstOrDefault(x => x.StartsWith("--start-index="));
-int startIndex = int.TryParse(startIndexArg?.Split('=')[1], out int index) ? index : 0;
-bool isUser = args.Contains("--mode=manual");
-bool needParse = args.Contains("--mode-xml=new_parse");
-bool loadLastSession = args.Contains("--mode-xml=load_last_session");
 
-List<string> urls;
-if (needParse)
+bool loadLastSession = args.Contains("--load_last_session");
+
+ProductParcer productParcer = new ProductParcer();
+Task<ParseResponse> taskParsing;
+if (loadLastSession)
 {
-    Console.WriteLine("Start parsing products urls ...");
-    SiteMapExtracter siteMapExtracter = new SiteMapExtracter();
-    urls = await siteMapExtracter.ExtractFromUrls("https://allenett.pl/product-sitemap1.xml","https://allenett.pl/product-sitemap2.xml","https://allenett.pl/product-sitemap3.xml","https://allenett.pl/product-sitemap4.xml");
-    if(!isUser) urls.RemoveAll(x=>SaverExtensions.UrlsBlackList.Value.Contains(x));
+    taskParsing = productParcer.FinishParse(SaverExtensions.LastParse.Read(), isVisible);
 }
 else
 {
-    urls = SaverExtensions.Urls.Value;
+    SiteMapExtracter siteMapExtracter = new SiteMapExtracter();
+    var urls = await siteMapExtracter.ExtractFromUrls("https://allenett.pl/product-sitemap1.xml","https://allenett.pl/product-sitemap2.xml","https://allenett.pl/product-sitemap3.xml","https://allenett.pl/product-sitemap4.xml");
+    urls.AddRange(SaverExtensions.Products.Value.Values.Select(x => x.Url).ToList());
+    urls = urls.Distinct().ToList();
+    
+    string? startIndexArg = args.FirstOrDefault(x => x.StartsWith("--start-index="));
+    int startIndex = int.TryParse(startIndexArg?.Split('=')[1], out int index) ? index : 0;
+    
+    taskParsing = productParcer.NewParse(urls, isVisible,startIndex);
 }
 
-ProductParcer productParcer = new ProductParcer();
-var taskParsing = loadLastSession
-    ? productParcer.FinishParse(SaverExtensions.LastParse.Read(), isUser)
-    : productParcer.NewParse(urls, isUser,startIndex);
 ParseResponse responseParsing = await taskParsing;
 
 Console.WriteLine($"Black urls:{responseParsing.BlackListUrls.Count}\nProducts:{responseParsing.Products.Count}");
@@ -72,16 +73,6 @@ foreach (var product in responseParsing.Products.Values)
     SaverExtensions.Products.Value[product.Url] = product;
 }
 SaverExtensions.Products.Write();
-    
-var blackList = SaverExtensions.UrlsBlackList.Value;
-blackList.AddRange(responseParsing.BlackListUrls);
-blackList = blackList.Distinct().ToList();
-SaverExtensions.UrlsBlackList.Value = blackList;
-SaverExtensions.UrlsBlackList.Write();
-    
-urls.RemoveAll(x => responseParsing.BlackListUrls.Contains(x));
-SaverExtensions.Urls.Value = urls;
-SaverExtensions.Urls.Write();
 
 CSVMaker.MakeCSV(SaverExtensions.Products.Read().Values.ToList(),SaverExtensions.CSVOptions.Value);
 

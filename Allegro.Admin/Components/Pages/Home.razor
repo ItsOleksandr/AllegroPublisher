@@ -202,14 +202,12 @@
                         <input id="startIndexInput" class="form-control" type="number" @bind="_consoleAdvancedOptions.StartIndex" placeholder="Start from index [0 .. length]" />
                         <div class="form-text">Skips ahead and resumes parsing from this position in the url list instead of starting at 0.</div>
                     </div>
-                    <div class="col-12 col-md-3">
-                        <label class="form-label" for="modeXmlSelect">Url source</label>
-                        <select id="modeXmlSelect" class="form-select" @bind="_consoleAdvancedOptions.ModeXml">
-                            <option value="none">Saved links</option>
-                            <option value="new_parse">New parse links</option>
-                            <option value="load_last_session">Continue last session</option>
-                        </select>
-                        <div class="form-text">Where the console reads the list of urls to parse from.</div>
+                    <div class="col-6 col-md-3">
+                        <div class="form-check">
+                            <input id="load_last_session" class="form-check-input" type="checkbox" @bind="_consoleAdvancedOptions.LoadLastSession" />
+                            <label class="form-check-label" for="load_last_session">Load last session</label>
+                        </div>
+                        <div class="form-text">Loads the last parse and continues it</div>
                     </div>
                     <div class="col-6 col-md-3">
                         <div class="form-check">
@@ -220,10 +218,10 @@
                     </div>
                     <div class="col-6 col-md-3">
                         <div class="form-check">
-                            <input id="isUserStartCheck" class="form-check-input" type="checkbox" @bind="_consoleAdvancedOptions.IsUserStart" />
-                            <label class="form-check-label" for="isUserStartCheck">Manual start</label>
+                            <input id="isUserStartCheck" class="form-check-input" type="checkbox" @bind="_consoleAdvancedOptions.IsVisible" />
+                            <label class="form-check-label" for="isUserStartCheck">Is visible browser</label>
                         </div>
-                        <div class="form-text">Waits for you to trigger parsing manually instead of starting automatically.</div>
+                        <div class="form-text">If you wanna see your browser actions</div>
                     </div>
                 </div>
                 <button class="btn btn-secondary" disabled="@isStartedConsole" @onclick="()=>StartConsole(saveData.Value.PathDllConsole,_consoleAdvancedOptions.Args)">Start advanced</button>
@@ -583,15 +581,15 @@
     {
         public int StartIndex { get; set; } = 0;
         public bool ConfigureBrowser { get; set; } = false;
-        public string ModeXml { get; set; } = "none";
-        public bool IsUserStart { get; set; } = true;
+        public bool LoadLastSession { get; set; } = false;
+        public bool IsVisible { get; set; } = true;
         public string TestUrl { get; set; } = "";
         
         public string Args => 
             (TestUrl.Trim().Length > 0 ? $"--test-url={TestUrl.Trim()} " : "") +
             (StartIndex > 0 ? $"--start-index={StartIndex} " : "") +
             (ConfigureBrowser ? "--configure-browser " : "") +
-            $"--mode-xml={ModeXml} " +
-            (IsUserStart ? "--mode=manual " : "");
+            (LoadLastSession ? "--load_last_session " : "") +
+            (IsVisible ? "--visible " : "");
     }
 }

@@ -56,15 +56,15 @@ public class ProductParcer
         return browser;
     }
 
-    public async Task<ParseResponse> NewParse(List<string> urls, bool isUserStarts,int startIndex = 0)
+    public async Task<ParseResponse> NewParse(List<string> urls, bool isVisible,int startIndex = 0)
     {
-        return await FinishParse(new ParseResponse() {AllUrls = urls,CurrentIndexUrl = startIndex},isUserStarts); 
+        return await FinishParse(new ParseResponse() {AllUrls = urls,CurrentIndexUrl = startIndex},isVisible); 
     }
     
     /// <param name="response">Must be a new object as it uses a static set for <see cref="SaverExtensions.LastParse"/> and may throw exception when modifying a list</param>
-    public async Task<ParseResponse> FinishParse(ParseResponse response,bool isUserStarts)
+    public async Task<ParseResponse> FinishParse(ParseResponse response,bool isVisible)
     {
-        var browser = await CreateBrowserContext(isUserStarts);
+        var browser = await CreateBrowserContext(isVisible);
         var page = await browser.NewPageAsync();
         
         ProductExtracter extracter = new ProductExtracter(page);
@@ -76,7 +76,7 @@ public class ProductParcer
             System.Console.WriteLine($"Url: {url}\n");
             try
             {
-                product = await extracter.Extract(url, isUserStarts);
+                product = await extracter.Extract(url);
             }
             catch (InvalidProductException e)
             {
@@ -119,7 +119,7 @@ public class ProductParcer
             catch (Exception e)
             {
                 System.Console.WriteLine($"Unhandled exception: {e.Message}");
-                if (isUserStarts) await Task.Delay(5000);
+                if (isVisible) await Task.Delay(5000);
                 continue;
             }
             if(product.Price < 0)

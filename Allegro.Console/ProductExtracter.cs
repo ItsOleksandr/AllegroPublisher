@@ -13,7 +13,7 @@ public class ProductExtracter
         _page = page;
     }
     
-    public async Task<ProductInfo> Extract(string url,bool isUserStarts)
+    public async Task<ProductInfo> Extract(string url)
     {
         try
         {
@@ -91,35 +91,6 @@ public class ProductExtracter
         {
             System.Console.WriteLine(e);
             throw new ProductAlreadyHandledException();
-            // System.Console.WriteLine(e);
-            // if (isUserStarts)
-            // {
-            //     do
-            //     {
-            //         System.Console.WriteLine("Skip (S) / Delete (D) / Again (A) / Break (B)");
-            //         var entered = System.Console.ReadLine()?.Trim() ?? "";
-            //         if (entered == "s")
-            //         {
-            //             throw new ProductAlreadyHandledException();
-            //         }
-            //         else if (entered == "d")
-            //         {
-            //             throw new InvalidProductException();
-            //         }
-            //         else if (entered == "a")
-            //         {
-            //             return await Extract(url,isUserStarts);
-            //         }
-            //         else if (entered == "b")
-            //         {
-            //             throw new ParserException();
-            //         }
-            //     } while (true);
-            // }
-            // else
-            // {
-            //     throw new ProductAlreadyHandledException();
-            // }
         }
     }
 
