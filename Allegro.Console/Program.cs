@@ -1,5 +1,32 @@
-﻿using Allegro.Core;
+﻿using System.Text.Json;
+using Allegro.Core;
 using Allegro.Console;
+
+var testUrlArg = args.FirstOrDefault(x => x.StartsWith("--test-url="));
+if (testUrlArg is not null)
+{
+    var url = testUrlArg["--test-url=".Length..].Trim();
+    Console.WriteLine($"Test parsing: {url}");
+
+    var testParcer = new ProductParcer();
+    var testBrowser = await testParcer.CreateBrowserContext(true);
+    var testPage = await testBrowser.NewPageAsync();
+    try
+    {
+        var product = await new ProductExtracter(testPage).Extract(url, isUserStarts: false);
+        Console.WriteLine("=== PARSED OK ===");
+        Console.WriteLine(JsonSerializer.Serialize(product, new JsonSerializerOptions { WriteIndented = true }));
+    }
+    catch (Exception e)
+    {
+        Console.WriteLine($"=== PARSE FAILED: {e.GetType().Name}: {e.Message} ===");
+    }
+    finally
+    {
+        await testBrowser.CloseAsync();
+    }
+    return;
+}
 
 if (args.Contains("--configure-browser"))
 {

@@ -45,8 +45,6 @@ public class ProductParcer
         args.Add($"--load-extension={extensionPathVpn},{extensionPathCaptcha}");
         var browser = await playwright.Chromium.LaunchPersistentContextAsync(Path.Combine(SaverExtensions.ResourceDirectory,"PlaywrightData"), new BrowserTypeLaunchPersistentContextOptions()
         {
-            // false so Playwright doesn't force *old* headless (which drops extensions);
-            // we control the mode ourselves via the --headless=new arg above.
             Headless = false,
             Args = args ,
             Env = new Dictionary<string, string>()

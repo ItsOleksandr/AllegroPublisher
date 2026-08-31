@@ -7,3 +7,4 @@ riderModule.iml
 *.sln*
 /Resources
 *settings.*json
+*.DS_Store

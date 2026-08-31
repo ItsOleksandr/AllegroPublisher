@@ -9,4 +9,5 @@ public class ProductInfo
     public string EAN { get; set; }
     public string[] CategoriesUrls { get; set; } = Array.Empty<string>();
     public int MinOrderQuantity { get; set; } = 0;
+    public DateTime LastUpdate { get; set; } = DateTime.MinValue;
 }

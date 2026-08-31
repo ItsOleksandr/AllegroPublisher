@@ -184,6 +184,17 @@
 
                 <hr />
 
+                <h6 class="fw-semibold">Test single product</h6>
+                <div class="input-group mb-1">
+                    <input class="form-control" type="url" @bind="_consoleAdvancedOptions.TestUrl" placeholder="https://allenett.pl/produkt/..." />
+                </div>
+                <div class="form-text mb-3">
+                    Parses just this one product and prints the result in <strong>Console output</strong> below.
+                    Nothing is saved. Use it to check selectors after the site changes.
+                </div>
+
+                <hr />
+
                 <h6 class="fw-semibold">Advanced options</h6>
                 <div class="row g-3 align-items-end mb-2">
                     <div class="col-12 col-md-3">
@@ -574,8 +585,10 @@
         public bool ConfigureBrowser { get; set; } = false;
         public string ModeXml { get; set; } = "none";
         public bool IsUserStart { get; set; } = true;
+        public string TestUrl { get; set; } = "";
         
         public string Args => 
+            (TestUrl.Trim().Length > 0 ? $"--test-url={TestUrl.Trim()} " : "") +
             (StartIndex > 0 ? $"--start-index={StartIndex} " : "") +
             (ConfigureBrowser ? "--configure-browser " : "") +
             $"--mode-xml={ModeXml} " +

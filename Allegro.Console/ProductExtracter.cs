@@ -18,7 +18,7 @@ public class ProductExtracter
         try
         {
             await _page.GotoAsync(url, _gotoOptions);
-  await _page.BringToFrontAsync();
+            await _page.BringToFrontAsync();
         }
         catch
         {
@@ -80,7 +80,7 @@ public class ProductExtracter
             return new ProductInfo
             {
                 Price = decimal.Parse(price, CultureInfo.InvariantCulture), Name = name, Count = int.Parse(countString),
-                EAN = ean, CategoriesUrls = categoriesUrl.ToArray(), Url = url,MinOrderQuantity = int.Parse(minOrderCount)
+                EAN = ean, CategoriesUrls = categoriesUrl.ToArray(), Url = url,MinOrderQuantity = int.Parse(minOrderCount),LastUpdate = DateTime.Now
             };
         }
         catch (InvalidProductException)
@@ -132,7 +132,7 @@ public class ProductExtracter
             {
                 await unAuthButton.ClickAsync();
                 await Task.Delay(4000);
-   await _page.Mouse.WheelAsync(0, 500);
+                await _page.Mouse.WheelAsync(0, 500);
                 var pressOptions = new LocatorPressSequentiallyOptions() { Delay = 200 };
                 var userName = _page.Locator("#username");
                 await userName.ClearAsync();
