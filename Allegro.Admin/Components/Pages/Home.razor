@@ -96,6 +96,15 @@
                             of that size, priced and stocked per pack, instead of individually. 0 = off.
                         </div>
                     </div>
+                    <div class="col-6">
+                        <label class="form-label" for="bundleMultiplierInput">Pack multiplier</label>
+                        <input id="bundleMultiplierInput" class="form-control" type="number" step="0.01" min="0" @bind="_listingOptions.BundleMultiplier" />
+                        <div class="form-text">
+                            Applied to a pack price on top of the tier above, so buying in bulk costs less per
+                            item: <strong>0.85</strong> makes every pack 15% cheaper. <strong>1</strong> leaves
+                            pack pricing alone. Single-unit offers are never touched by it.
+                        </div>
+                    </div>
                 </div>
 
                 <div class="mb-3">
