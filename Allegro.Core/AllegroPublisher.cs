@@ -9,8 +9,7 @@ namespace Allegro.Core;
 /// <summary>
 /// Talks to the official Allegro REST API (https://developer.allegro.pl).
 /// Authenticates a single seller account via the OAuth2 <b>device flow</b> and
-/// publishes the generated <c>products.csv</c> by updating price and stock on
-/// existing offers. Offers are matched by <c>external.id == EAN</c> — the standard
+/// publishes the parsed catalogue by updating price and stock on existing offers. Offers are matched by <c>external.id == EAN</c> — the standard
 /// way Allegro keys offers to an external inventory system. Products with no
 /// matching offer are skipped (creating new offers is out of scope).
 ///
@@ -249,16 +248,13 @@ public class AllegroPublisher
 
     // ------------------------------------------------------------------- publish
 
-    /// <summary>
-    /// Reads <c>products.csv</c> (EAN;Liczba;Cena) and updates price and stock on
-    /// the matching Allegro offers. Returns the number of offers updated.
-    /// </summary>
     public async Task<int> PublishAsync(Action<string>? log = null)
     {
         await EnsureValidTokenAsync();
 
-        var rows = ReadCsvRows(log);
-        log?.Invoke($"Loaded {rows.Count} product rows from {CSVMaker.FileName}.");
+        var options = SaverExtensions.ListingOptions.Read();
+        var rows = BuildListings(SaverExtensions.Products.Read().Values, options);
+        log?.Invoke($"{rows.Count} products with an EAN, {rows.Count(r => r.Count > 0)} of them sellable.");
         if (rows.Count == 0)
         {
             return 0;
@@ -313,45 +309,30 @@ public class AllegroPublisher
         return updated;
     }
 
-    private static List<CsvRow> ReadCsvRows(Action<string>? log)
+    private static List<ListingRow> BuildListings(IEnumerable<ProductInfo> products, ListingOptions options)
     {
-        var path = Path.Combine(SaverExtensions.ResourceDirectory, CSVMaker.FileName);
-        if (!File.Exists(path))
+        var rows = new List<ListingRow>();
+        foreach (var product in products)
         {
-            throw new InvalidOperationException($"{CSVMaker.FileName} not found. Regenerate the CSV first.");
-        }
+            if (string.IsNullOrWhiteSpace(product.EAN))
+            {
+                continue;
+            }
 
-        var rows = new List<CsvRow>();
-        foreach (var line in File.ReadLines(path).Skip(1)) // skip "EAN;Liczba;Cena" header
-        {
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
-            var parts = line.Split(';');
-            if (parts.Length < 3)
-            {
-                continue;
-            }
-            var ean = parts[0].Trim();
-            if (ean.Length == 0
-                || !int.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var count)
-                || !decimal.TryParse(parts[2].Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var price))
-            {
-                log?.Invoke($"Skip malformed CSV line: {line}");
-                continue;
-            }
-            rows.Add(new CsvRow(ean, count, price));
+            rows.Add(new ListingRow(
+                product.EAN,
+                options.Includes(product) ? options.GetOfferStock(product) : 0,
+                options.GetOfferPrice(product)));
         }
         return rows;
     }
 
-    /// <summary>An active offer whose product no longer passes the CSV options, and why.</summary>
+    /// <summary>An active offer whose product no longer passes the listing options, and why.</summary>
     public record OrphanOffer(string Id, string Ean, string Name, string Reason);
 
     /// <summary>
     /// Finds <b>active</b> offers listed by this app (they carry an <c>external.id</c>) whose product
-    /// is in the parsed catalogue but <b>no longer passes the current CSV options</b> — a blacklisted
+    /// is in the parsed catalogue but <b>no longer passes the current listing options</b> — a blacklisted
     /// category, a blacklisted EAN, stock below the minimum, and so on. These are the offers that
     /// should not be on sale any more. Offers listed manually (no <c>external.id</c>) and products
     /// the parser has never seen are left alone. Read-only: use <see cref="EndOffersAsync"/> to act.
@@ -360,8 +341,7 @@ public class AllegroPublisher
     {
         await EnsureValidTokenAsync();
 
-        var options = SaverExtensions.CSVOptions.Read();
-        var passesOptions = CSVMaker.FilterProduct(options);
+        var options = SaverExtensions.ListingOptions.Read();
 
         var productByEan = new Dictionary<string, ProductInfo>(StringComparer.OrdinalIgnoreCase);
         foreach (var product in SaverExtensions.Products.Read().Values)
@@ -412,7 +392,7 @@ public class AllegroPublisher
                     continue;
                 }
 
-                if (!passesOptions(product))
+                if (!options.Includes(product))
                 {
                     orphans.Add(new OrphanOffer(offer.Id, ean, offer.Name, ExplainRejection(product, options)));
                 }
@@ -425,12 +405,11 @@ public class AllegroPublisher
         }
 
         log?.Invoke($"Scanned {total} active offers — {foreign} not listed by this app, {unknown} not in the " +
-                    $"parsed catalogue (both left alone), {orphans.Count} no longer pass the CSV options.");
+                    $"parsed catalogue (both left alone), {orphans.Count} no longer pass the listing options.");
         return orphans;
     }
 
-    /// <summary>Which CSV option rejected this product. Mirrors <see cref="CSVMaker.FilterProduct"/>.</summary>
-    private static string ExplainRejection(ProductInfo product, CSVOptions options)
+    private static string ExplainRejection(ProductInfo product, ListingOptions options)
     {
         var category = options.CategoriesBlackList
             .FirstOrDefault(rule => product.CategoriesUrls.Any(url => url.Contains(rule)));
@@ -464,7 +443,7 @@ public class AllegroPublisher
             return $"bundle of {product.MinOrderQuantity}, only {product.Count} in stock";
         }
 
-        return "does not pass the CSV options";
+        return "does not pass the listing options";
     }
 
     /// <summary>Takes the given offers off sale. Returns how many succeeded.</summary>
@@ -655,7 +634,7 @@ public class AllegroPublisher
 
     // ------------------------------------------------------------------- DTOs
 
-    private record CsvRow(string Ean, int Count, decimal Price);
+    private record ListingRow(string Ean, int Count, decimal Price);
 
     private class DeviceCodeResponse
     {

@@ -5,18 +5,8 @@ using System.Text.Json.Nodes;
 
 namespace Allegro.Core;
 
-/// <summary>
-/// Works out which products should be sold as a multipack instead of individually, and what each
-/// existing offer would have to become. Read-only: it resolves offers and computes the changes, but
-/// applies nothing. The result is the list a human approves before anything is written.
-///
-/// A product qualifies when the supplier's minimum order quantity is above
-/// <see cref="CSVOptions.BundleFromQuantity"/> - buying one unit is not possible, so listing one unit
-/// is a lie. The whole pack becomes the unit of sale.
-/// </summary>
 public sealed class BundlePlan
 {
-    /// <summary>Allegro rejects offer titles longer than this.</summary>
     public const int MaxNameLength = 75;
 
     private readonly AllegroPublisher _publisher;
@@ -26,7 +16,6 @@ public sealed class BundlePlan
         _publisher = publisher;
     }
 
-    /// <param name="Problem">Why this one cannot be converted, or null when it can.</param>
     public record BundleChange(
         string Ean,
         string? OfferId,
@@ -46,15 +35,13 @@ public sealed class BundlePlan
 
     public async Task<List<BundleChange>> BuildAsync(Action<string>? log = null)
     {
-        var options = SaverExtensions.CSVOptions.Read();
+        var options = SaverExtensions.ListingOptions.Read();
         var products = SaverExtensions.Products.Read().Values.ToList();
 
         var candidates = SelectCandidates(products, options);
         log?.Invoke($"{products.Count} products parsed, {candidates.Count} qualify as bundles " +
                     $"(min order > {options.BundleFromQuantity}, in stock, not black listed).");
 
-        // Raising the threshold un-qualifies products that are already packs on Allegro. They have to be
-        // taken back to single units, or the CSV would price a pack of ten as though it were one item.
         var qualified = candidates.Select(p => p.EAN).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var byEan = products.Where(p => !string.IsNullOrEmpty(p.EAN))
                             .GroupBy(p => p.EAN, StringComparer.OrdinalIgnoreCase)
@@ -81,11 +68,7 @@ public sealed class BundlePlan
         return changes;
     }
 
-    /// <summary>
-    /// The products worth converting. Deliberately reuses the ordinary CSV rules for everything except
-    /// the min-order test, so a bundle can never sneak past a black list that would stop a single unit.
-    /// </summary>
-    private static List<ProductInfo> SelectCandidates(List<ProductInfo> products, CSVOptions options)
+    private static List<ProductInfo> SelectCandidates(List<ProductInfo> products, ListingOptions options)
     {
         return products
             .Where(p => p.MinOrderQuantity > options.BundleFromQuantity)
@@ -93,12 +76,11 @@ public sealed class BundlePlan
             .Where(p => !p.CategoriesUrls.Any(url => options.CategoriesBlackList.Any(url.Contains)))
             .Where(p => !options.EansBlackList.Contains(p.EAN))
             .Where(p => p.Price >= options.MinimalPrice)
-            // One whole pack must be available, or there is nothing to sell.
             .Where(p => p.Count >= p.MinOrderQuantity)
             .ToList();
     }
 
-    private BundleChange BuildChange(ProductInfo product, OfferSnapshot? offer, CSVOptions options)
+    private BundleChange BuildChange(ProductInfo product, OfferSnapshot? offer, ListingOptions options)
     {
         var pack = options.GetPackSize(product);
         var packPrice = options.GetOfferPrice(product);
@@ -117,10 +99,6 @@ public sealed class BundlePlan
             offer?.Status ?? "", problem);
     }
 
-    /// <summary>
-    /// "Zestaw 10 szt. <name>", trimmed to Allegro's title limit. The prefix is what buyers scan for,
-    /// so the original name gives way, not the prefix.
-    /// </summary>
     public static string BuildName(string name, int pack)
     {
         var prefix = pack > 1 ? $"Zestaw {pack} szt. " : "";
@@ -130,13 +108,6 @@ public sealed class BundlePlan
         return prefix + trimmed;
     }
 
-    /// <summary>
-    /// The supplier writes titles with typographic characters - 60×80, 1,33L – XJ4972, 5″ - that Allegro
-    /// rejects outright ("Tytuł zawiera niedozwolone znaki"). Those names never passed Allegro validation,
-    /// because they came from a scraped page, not from an existing offer. Fold the look-alikes onto their
-    /// ASCII equivalents so the meaning survives, then drop anything still outside the safe set.
-    /// Polish letters are kept - they are ordinary letters, not special characters.
-    /// </summary>
     public static string SanitizeName(string name)
     {
         const string polish = "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ";
@@ -161,8 +132,6 @@ public sealed class BundlePlan
             }
             else if (c is '"' or '\'')
             {
-                // Quotes survive the fold above but are not worth risking in a title: a stray inch mark
-                // reads fine as nothing at all.
                 continue;
             }
             else if (!char.IsWhiteSpace(c))
@@ -175,15 +144,11 @@ public sealed class BundlePlan
             }
         }
 
-        // Folding and dropping leaves double spaces behind; Allegro trims titles anyway.
         return string.Join(' ', builder.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
-    // ------------------------------------------------------------------ offers
-
     public record OfferSnapshot(string Id, string Name, decimal Price, int Quantity, string Status);
 
-    /// <summary>Looks up our offers by external.id == EAN, batched the way the publisher does it.</summary>
     public async Task<Dictionary<string, OfferSnapshot>> ResolveOffersAsync(IEnumerable<string> eans, Action<string>? log)
     {
         var result = new Dictionary<string, OfferSnapshot>(StringComparer.OrdinalIgnoreCase);
@@ -215,8 +180,6 @@ public sealed class BundlePlan
                     id,
                     offer?["name"]?.GetValue<string>() ?? "",
                     decimal.TryParse(amount, NumberStyles.Number, CultureInfo.InvariantCulture, out var price) ? price : 0m,
-                    // The list endpoint does not expose productSet, so quantity is unknown here;
-                    // the converter re-reads each offer in full before touching it.
                     0,
                     offer?["publication"]?["status"]?.GetValue<string>() ?? "");
             }
@@ -226,57 +189,4 @@ public sealed class BundlePlan
         return result;
     }
 
-    // ------------------------------------------------------------------ report
-
-    /// <summary>Prints a summary and writes the full plan to probe/bundle-plan.csv for review.</summary>
-    public static void Report(List<BundleChange> changes, Action<string>? log = null)
-    {
-        var convertible = changes.Where(c => c.CanConvert).ToList();
-        var blocked = changes.Where(c => !c.CanConvert).ToList();
-
-        log?.Invoke("");
-        log?.Invoke($"Can be converted in place : {convertible.Count}");
-        foreach (var group in blocked.GroupBy(c => c.Problem))
-        {
-            log?.Invoke($"Blocked ({group.Count()}) : {group.Key}");
-        }
-
-        log?.Invoke("");
-        foreach (var group in convertible.GroupBy(c => c.OfferStatus).OrderByDescending(g => g.Count()))
-        {
-            log?.Invoke($"  {group.Key,-10} {group.Count(),4} offers");
-        }
-
-        log?.Invoke("");
-        log?.Invoke($"{"EAN",-15} {"pack",5} {"stock",6} {"price now",10} {"price as set",13}  name");
-        foreach (var change in convertible.Take(25))
-        {
-            log?.Invoke($"{change.Ean,-15} {change.PackSize,5} {change.NewStock,6} " +
-                        $"{change.OldOfferPrice,10:0.00} {change.NewOfferPrice,13:0.00}  {change.NewName}");
-        }
-        if (convertible.Count > 25)
-        {
-            log?.Invoke($"... and {convertible.Count - 25} more - see the CSV");
-        }
-
-        var path = Path.Combine(SaverExtensions.ResourceDirectory, "probe", "bundle-plan.csv");
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-
-        var csv = new StringBuilder();
-        csv.AppendLine("EAN;OfferId;Status;Pack;SupplierUnitPrice;OldOfferPrice;NewOfferPrice;SupplierStock;NewStock;OldName;NewName;Problem");
-        foreach (var c in changes)
-        {
-            csv.AppendLine(string.Join(";",
-                c.Ean, c.OfferId, c.OfferStatus, c.PackSize,
-                c.SupplierUnitPrice.ToString(CultureInfo.InvariantCulture),
-                c.OldOfferPrice.ToString(CultureInfo.InvariantCulture),
-                c.NewOfferPrice.ToString(CultureInfo.InvariantCulture),
-                c.SupplierStock, c.NewStock,
-                c.OldName.Replace(';', ','), c.NewName.Replace(';', ','), c.Problem));
-        }
-        File.WriteAllText(path, csv.ToString());
-
-        log?.Invoke("");
-        log?.Invoke($"Full plan written to {path}");
-    }
 }

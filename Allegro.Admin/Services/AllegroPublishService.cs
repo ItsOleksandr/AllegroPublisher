@@ -49,12 +49,36 @@ public class AllegroPublishService
         return new DeviceFlowInfo(auth.UserCode, auth.VerificationUri);
     }
 
-    /// <summary>Active offers on Allegro that products.csv doesn't know about. Read-only.</summary>
+    /// <summary>Active offers whose product no longer passes the options. Read-only.</summary>
     public Task<List<AllegroPublisher.OrphanOffer>> FindOrphanOffersAsync() =>
         _publisher.FindOrphanOffersAsync(Log);
 
     public Task<int> EndOffersAsync(IEnumerable<string> offerIds) =>
         _publisher.EndOffersAsync(offerIds, Log);
+
+    public Task<List<BundlePlan.BundleChange>> BuildBundlePlanAsync() =>
+        new BundlePlan(_publisher).BuildAsync(Log);
+
+    public async Task<BundleConverter.Result> ConvertBundlesAsync(List<BundlePlan.BundleChange> plan)
+    {
+        if (IsPublishing)
+        {
+            throw new InvalidOperationException("A publish is already in progress.");
+        }
+
+        IsPublishing = true;
+        try
+        {
+            return await new BundleConverter(_publisher).ConvertAsync(plan, log: Log);
+        }
+        finally
+        {
+            IsPublishing = false;
+        }
+    }
+
+    public Task<List<OfferCreator.Candidate>> PlanNewOffersAsync() =>
+        new OfferCreator(_publisher).PlanAsync(Log);
 
     public async Task<int> PublishAsync()
     {

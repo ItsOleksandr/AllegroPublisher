@@ -75,22 +75,22 @@
 
     <div class="col-12 col-xl-6">
         <div class="card h-100 shadow-sm">
-            <div class="card-header fw-semibold">CSV export</div>
+            <div class="card-header fw-semibold">Listing rules</div>
             <div class="card-body">
                 <div class="row g-3 mb-2">
                     <div class="col-6">
                         <label class="form-label" for="minProductCountInput">Minimal product count</label>
-                        <input id="minProductCountInput" class="form-control" type="number" min="0" @bind="_csvOptions.MinimalProductCount" />
-                        <div class="form-text">Categories with fewer parsed products than this are excluded from the CSV.</div>
+                        <input id="minProductCountInput" class="form-control" type="number" min="0" @bind="_listingOptions.MinimalProductCount" />
+                        <div class="form-text">Categories with fewer parsed products than this are not put on sale.</div>
                     </div>
                     <div class="col-6">
                         <label class="form-label" for="minPriceInput">Minimal price</label>
-                        <input id="minPriceInput" class="form-control" type="number" step="0.01" min="0" @bind="_csvOptions.MinimalPrice" />
-                        <div class="form-text">Products priced below this value are excluded from the CSV.</div>
+                        <input id="minPriceInput" class="form-control" type="number" step="0.01" min="0" @bind="_listingOptions.MinimalPrice" />
+                        <div class="form-text">Products priced below this value are not put on sale.</div>
                     </div>
                     <div class="col-6">
                         <label class="form-label" for="bundleFromInput">Sell as a pack above</label>
-                        <input id="bundleFromInput" class="form-control" type="number" min="0" @bind="_csvOptions.BundleFromQuantity" />
+                        <input id="bundleFromInput" class="form-control" type="number" min="0" @bind="_listingOptions.BundleFromQuantity" />
                         <div class="form-text">
                             Products whose supplier minimum order is above this are listed as a single pack
                             of that size, priced and stocked per pack, instead of individually. 0 = off.
@@ -113,19 +113,19 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var tier in _csvOptions.PriceMultipliers.OrderBy(t => t.MaxPrice).ToList())
+                            @foreach (var tier in _listingOptions.PriceMultipliers.OrderBy(t => t.MaxPrice).ToList())
                             {
                                 <tr>
                                     <td><input class="form-control form-control-sm" type="number" step="0.01" min="0" @bind="tier.MaxPrice" /></td>
                                     <td><input class="form-control form-control-sm" type="number" step="0.01" min="0" @bind="tier.Multiplier" /></td>
                                     <td>
-                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => _csvOptions.PriceMultipliers.Remove(tier)">✕</button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => _listingOptions.PriceMultipliers.Remove(tier)">✕</button>
                                     </td>
                                 </tr>
                             }
                             <tr>
                                 <td class="text-muted small align-middle">above → default</td>
-                                <td><input class="form-control form-control-sm" type="number" step="0.01" min="0" @bind="_csvOptions.DefaultMultiplier" /></td>
+                                <td><input class="form-control form-control-sm" type="number" step="0.01" min="0" @bind="_listingOptions.DefaultMultiplier" /></td>
                                 <td></td>
                             </tr>
                         </tbody>
@@ -136,25 +136,23 @@
                 <div class="row g-3 mb-2">
                     <div class="col-12 col-md-6">
                         <label class="form-label">Category black list</label>
-                        <TagListEditor Items="_csvOptions.CategoriesBlackList"
+                        <TagListEditor Items="_listingOptions.CategoriesBlackList"
                                        Placeholder="e.g. Electronics"
                                        EmptyText="Empty — no category is excluded." />
                         <div class="form-text">A product is excluded when any of its category urls contains one of these.</div>
                     </div>
                     <div class="col-12 col-md-6">
                         <label class="form-label">EAN black list</label>
-                        <TagListEditor Items="_csvOptions.EansBlackList"
+                        <TagListEditor Items="_listingOptions.EansBlackList"
                                        Placeholder="e.g. 5901234123457"
                                        EmptyText="Empty — no EAN is excluded." />
-                        <div class="form-text">Products with these exact EANs are excluded from the CSV.</div>
+                        <div class="form-text">Products with these exact EANs are never put on sale.</div>
                     </div>
                 </div>
                 <div class="small text-muted mb-2">
-                    These options are stored in <code>csv_options.txt</code> and control which parsed products are included when the CSV is (re)generated. Use <strong>Save all options</strong> above to persist changes.
-                </div>
-                <div class="d-flex gap-2">
-                    <a class="btn btn-outline-primary" href="/@CSVMaker.FileName" download="@CSVMaker.FileName">Download products.csv</a>
-                    <button class="btn btn-primary" @onclick="RegenerateCsv">Regenerate CSV</button>
+                    Stored in <code>listing_options.txt</code>. They decide which parsed products are on sale, and at what
+                    price — applied on every publish, straight from the parsed catalogue. Use
+                    <strong>Save all options</strong> above to persist changes.
                 </div>
             </div>
         </div>
@@ -273,11 +271,10 @@
                 </div>
 
                 <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
-                    <button class="btn btn-outline-secondary" @onclick="SaveAllOptions">Save credentials</button>
                     <button class="btn btn-outline-primary" @onclick="ConnectAllegro">@(allegro.Settings.IsConnected ? "Reconnect account" : "Connect account")</button>
                     <button class="btn btn-outline-primary" @onclick="RefreshTokenAllegro">Try refresh token</button>
                     <button class="btn btn-success" disabled="@(!allegro.Settings.IsConnected || allegro.IsPublishing)" @onclick="PublishToAllegro">
-                        @(allegro.IsPublishing ? "Publishing..." : "Publish CSV to Allegro")
+                        @(allegro.IsPublishing ? "Publishing..." : "Publish to Allegro")
                     </button>
                 </div>
 
@@ -291,10 +288,99 @@
                 }
 
                 <div class="form-text mb-3">
-                    Reads <code>@CSVMaker.FileName</code> (EAN;Liczba;Cena) and updates <strong>price and stock</strong> on existing
+                    Prices the parsed catalogue with the options above and updates <strong>price and stock</strong> on existing
                     offers. Offers are matched by their <strong>external ID = EAN</strong>. Products with no matching offer are skipped
                     (new offers are not created).
                 </div>
+
+                <hr />
+
+                <h6 class="fw-semibold">Sell as packs</h6>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                    <button class="btn btn-outline-secondary" disabled="@(!allegro.Settings.IsConnected || _isPlanningBundles)" @onclick="BuildBundlePlan">
+                        @(_isPlanningBundles ? "Building..." : "Build pack plan")
+                    </button>
+                    @if (_bundlePlan is not null && _convertibleBundles > 0)
+                    {
+                        <button class="btn btn-primary" disabled="@_isConverting" @onclick="ConvertBundles">
+                            @(_isConverting ? "Converting..." : $"Convert {_convertibleBundles} offer(s)")
+                        </button>
+                    }
+                </div>
+                <div class="form-text mb-2">
+                    Products the supplier will not sell singly — minimum order above
+                    <strong>@_listingOptions.BundleFromQuantity</strong> — are listed as one pack instead of one item.
+                    Converting changes the offer <strong>in place</strong>: it keeps its id, history and search
+                    position, and quantity, price, stock and title all move in one request, so a pack is never
+                    briefly on sale at the price of a single unit. Raising the threshold later takes these offers
+                    back to single units. Building the plan is read-only.
+                </div>
+
+                @if (_bundlePlan is not null)
+                {
+                    @if (_bundlePlan.Count == 0)
+                    {
+                        <div class="alert alert-success py-2">No product has a minimum order above the threshold.</div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-info py-2">
+                            <strong>@_convertibleBundles</strong> offer(s) can be converted in place.
+                            @if (_blockedBundles > 0)
+                            {
+                                <span>@_blockedBundles product(s) have no offer to convert — they would have to be created.</span>
+                            }
+                        </div>
+                        <div class="table-responsive mb-3" style="max-height: 260px; overflow-y: auto;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>EAN</th><th class="text-end">Pack</th><th class="text-end">Stock</th>
+                                        <th class="text-end">Price now</th><th class="text-end">As pack</th><th>New title</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var change in _bundlePlan.Where(c => c.CanConvert))
+                                    {
+                                        <tr>
+                                            <td><code>@change.Ean</code></td>
+                                            <td class="text-end">@change.PackSize</td>
+                                            <td class="text-end">@change.NewStock</td>
+                                            <td class="text-end text-muted">@change.OldOfferPrice.ToString("0.00")</td>
+                                            <td class="text-end fw-semibold">@change.NewOfferPrice.ToString("0.00")</td>
+                                            <td class="small">@change.NewName</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+
+                <hr />
+
+                <h6 class="fw-semibold">Products with no offer</h6>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                    <button class="btn btn-outline-secondary" disabled="@(!allegro.Settings.IsConnected || _isScanningUnlisted)" @onclick="ScanUnlisted">
+                        @(_isScanningUnlisted ? "Scanning..." : "Scan unlisted products")
+                    </button>
+                </div>
+                <div class="form-text mb-2">
+                    Publishing only ever updates offers that already exist, so a product the supplier added after
+                    the storefront was built stays invisible however often the job runs. This reports which sellable
+                    products have no offer, and whether a catalogue card can be found for them by EAN. Read-only.
+                </div>
+
+                @if (_unlisted is not null)
+                {
+                    <div class="alert alert-info py-2">
+                        <strong>@_unlisted.Count(c => c.CanCreate)</strong> product(s) have a catalogue card and could be listed.
+                        @if (_unlisted.Any(c => !c.CanCreate))
+                        {
+                            <span>@_unlisted.Count(c => !c.CanCreate) could not be resolved.</span>
+                        }
+                    </div>
+                }
 
                 <hr />
 
@@ -312,7 +398,7 @@
                 </div>
                 <div class="form-text mb-2">
                     Finds <strong>active</strong> offers listed by this app (they carry an <strong>external ID</strong>)
-                    whose product is in the parsed catalogue but <strong>no longer passes the CSV options above</strong> —
+                    whose product is in the parsed catalogue but <strong>no longer passes the listing options above</strong> —
                     a blacklisted category, a blacklisted EAN, stock below the minimum, and so on. Offers listed
                     <strong>manually or by another tool</strong>, and products the parser has never seen, are never
                     reported or touched. Scanning is read-only; nothing changes until you press End.
@@ -322,12 +408,12 @@
                 {
                     @if (_orphanOffers.Count == 0)
                     {
-                        <div class="alert alert-success py-2">Nothing to end — every active offer still passes the CSV options.</div>
+                        <div class="alert alert-success py-2">Nothing to end — every active offer still passes the listing options.</div>
                     }
                     else
                     {
                         <div class="alert alert-warning py-2">
-                            <strong>@_orphanOffers.Count</strong> active offer(s) no longer pass the CSV options.
+                            <strong>@_orphanOffers.Count</strong> active offer(s) no longer pass the listing options.
                             Check the reason on each before ending — this takes them off sale.
                         </div>
                         <div class="table-responsive mb-3" style="max-height: 260px; overflow-y: auto;">
@@ -362,7 +448,7 @@
 
 @code{
     private ParseResponse _lastParsing = new ParseResponse();
-    private CSVOptions _csvOptions = new CSVOptions();
+    private ListingOptions _listingOptions = new ListingOptions();
     
     private StartParserProcessOptions _consoleAdvancedOptions = new StartParserProcessOptions();
     private static StartParserProcessOptions _consoleBaseStartOptions = new StartParserProcessOptions();
@@ -384,6 +470,15 @@
     private bool _isScanning;
     private bool _isEndingOrphans;
 
+    private List<BundlePlan.BundleChange>? _bundlePlan;
+    private bool _isPlanningBundles;
+    private bool _isConverting;
+    private int _convertibleBundles => _bundlePlan?.Count(c => c.CanConvert) ?? 0;
+    private int _blockedBundles => _bundlePlan?.Count(c => !c.CanConvert) ?? 0;
+
+    private List<OfferCreator.Candidate>? _unlisted;
+    private bool _isScanningUnlisted;
+
     protected override void OnInitialized()
     {
         _logRefreshTimer = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
@@ -392,7 +487,7 @@
     protected override void OnParametersSet()
     {
         _lastParsing = SaverExtensions.LastParse.Read();
-        _csvOptions = SaverExtensions.CSVOptions.Read();
+        _listingOptions = SaverExtensions.ListingOptions.Read();
     }
 
     public void Dispose()
@@ -402,16 +497,10 @@
 
     private void AddPriceTier()
     {
-        var nextBound = _csvOptions.PriceMultipliers.Count == 0
+        var nextBound = _listingOptions.PriceMultipliers.Count == 0
             ? 10m
-            : _csvOptions.PriceMultipliers.Max(t => t.MaxPrice) + 10m;
-        _csvOptions.PriceMultipliers.Add(new PriceTier { MaxPrice = nextBound, Multiplier = 1m });
-    }
-
-    private void RegenerateCsv()
-    {
-        CSVMaker.MakeCSV(SaverExtensions.Products.Read().Values.ToList(),SaverExtensions.CSVOptions.Read());
-        toastService.ShowSuccess("CSV regenerated successfully!");
+            : _listingOptions.PriceMultipliers.Max(t => t.MaxPrice) + 10m;
+        _listingOptions.PriceMultipliers.Add(new PriceTier { MaxPrice = nextBound, Multiplier = 1m });
     }
 
     private void SaveAllOptions()
@@ -419,8 +508,8 @@
         try
         {
             saveData.Write();
-            SaverExtensions.CSVOptions.Value = _csvOptions;
-            SaverExtensions.CSVOptions.Write();
+            SaverExtensions.ListingOptions.Value = _listingOptions;
+            SaverExtensions.ListingOptions.Write();
             allegro.SaveSettings();
             toastService.ShowSuccess("Options saved successfully!");
         }
@@ -454,6 +543,66 @@
         catch
         {
             toastService.ShowError("Can`t refresh allegro token");
+        }
+    }
+
+    private async Task BuildBundlePlan()
+    {
+        _isPlanningBundles = true;
+        try
+        {
+            _bundlePlan = await allegro.BuildBundlePlanAsync();
+            toastService.ShowInfo($"{_convertibleBundles} offer(s) can be converted to packs.");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            _isPlanningBundles = false;
+        }
+    }
+
+    private async Task ConvertBundles()
+    {
+        if (_bundlePlan is null or { Count: 0 })
+        {
+            return;
+        }
+
+        _isConverting = true;
+        try
+        {
+            var result = await allegro.ConvertBundlesAsync(_bundlePlan);
+            toastService.ShowSuccess($"Converted {result.Converted}, skipped {result.Skipped}, failed {result.Failed}.");
+            _bundlePlan = null; // force a rebuild so the table can't go stale
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            _isConverting = false;
+        }
+    }
+
+    private async Task ScanUnlisted()
+    {
+        _isScanningUnlisted = true;
+        try
+        {
+            _unlisted = await allegro.PlanNewOffersAsync();
+            toastService.ShowInfo($"{_unlisted.Count(c => c.CanCreate)} product(s) could be listed.");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            _isScanningUnlisted = false;
         }
     }
 

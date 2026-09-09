@@ -69,15 +69,4 @@ app.MapPost("/auth/logout", async (HttpContext ctx) =>
     return Results.Redirect("/login");
 });
 
-app.MapGet($"/{CSVMaker.FileName}", (HttpContext context) =>
-{
-    context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
-    context.Response.Headers["Pragma"] = "no-cache";
-    context.Response.Headers["Expires"] = "0";
-    
-    string filePath = Path.Combine(SaverExtensions.ResourceDirectory, CSVMaker.FileName);
-    
-    return Results.File(filePath, "text/csv");
-});
-
 app.Run();
