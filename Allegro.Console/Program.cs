@@ -93,3 +93,10 @@ await new BundleConverter(publisher).ConvertAsync(bundlePlan, log: Console.Write
 
 var updated = await publisher.PublishAsync(Console.WriteLine);
 Console.WriteLine($"Publish finished: {updated} offers updated.");
+
+var tracker = new UnlistedTracker();
+if (tracker.NewCount > 10)
+{
+    TelegramNotify notify = new TelegramNotify();
+    await notify.SendAdminAsync($"#AllegroApp {tracker.NewCount} new products have been added; please import them.");
+}

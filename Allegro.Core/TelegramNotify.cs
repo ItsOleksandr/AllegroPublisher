@@ -1,10 +1,23 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 
 namespace Allegro.Core;
 
 public class TelegramNotify
 {
+    public async Task<bool> SendAdminAsync(string text)
+    {
+        var config = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory) 
+            .AddJsonFile("coresettings.json", optional: false, reloadOnChange: true)
+            .Build();
+        
+        string? botToken = config.GetSection("Telegram").GetSection("BotToken").Value ?? throw new FormatException("No botToken in coresettings.json");
+        string? chatId = config.GetSection("Telegram").GetSection("ChatId").Value ?? throw new FormatException("No chatId in coresettings.json");
+        return await SendAsync(botToken, chatId, text); 
+    }
+    
     public async Task<bool> SendAsync(
         string botToken,
         string chatId,

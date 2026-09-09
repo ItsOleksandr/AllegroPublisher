@@ -361,14 +361,23 @@
 
                 <h6 class="fw-semibold">Products with no offer</h6>
                 <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                    <span class="badge @(_unlistedNew > 0 ? "bg-warning text-dark" : "bg-secondary") fs-6">
+                        @_unlistedNew new
+                    </span>
+                    <span class="text-muted small">@_unlistedTotal without an offer in total</span>
+                    <button class="btn btn-outline-secondary" disabled="@(_unlistedNew == 0)" @onclick="MarkImported">
+                        Mark as imported
+                    </button>
                     <button class="btn btn-outline-secondary" disabled="@(!allegro.Settings.IsConnected || _isScanningUnlisted)" @onclick="ScanUnlisted">
                         @(_isScanningUnlisted ? "Scanning..." : "Scan unlisted products")
                     </button>
                 </div>
                 <div class="form-text mb-2">
                     Publishing only ever updates offers that already exist, so a product the supplier added after
-                    the storefront was built stays invisible however often the job runs. This reports which sellable
-                    products have no offer, and whether a catalogue card can be found for them by EAN. Read-only.
+                    the storefront was built stays invisible however often the job runs. The counter is filled in by
+                    the last publish and costs nothing to read — press <strong>Mark as imported</strong> once you have
+                    listed them, and it counts only what appears after that. <strong>Scan unlisted products</strong>
+                    asks Allegro for the state right now and also looks up a catalogue card for each one.
                 </div>
 
                 @if (_unlisted is not null)
@@ -479,6 +488,9 @@
     private List<OfferCreator.Candidate>? _unlisted;
     private bool _isScanningUnlisted;
 
+    private int _unlistedNew;
+    private int _unlistedTotal;
+
     protected override void OnInitialized()
     {
         _logRefreshTimer = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
@@ -488,6 +500,28 @@
     {
         _lastParsing = SaverExtensions.LastParse.Read();
         _listingOptions = SaverExtensions.ListingOptions.Read();
+        RefreshUnlisted();
+    }
+
+    private void RefreshUnlisted()
+    {
+        var tracker = new UnlistedTracker();
+        _unlistedNew = tracker.NewCount;
+        _unlistedTotal = tracker.Count;
+    }
+
+    private void MarkImported()
+    {
+        try
+        {
+            new UnlistedTracker().MarkImported();
+            RefreshUnlisted();
+            toastService.ShowSuccess($"Counter cleared. {_unlistedTotal} product(s) still have no offer.");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
     }
 
     public void Dispose()

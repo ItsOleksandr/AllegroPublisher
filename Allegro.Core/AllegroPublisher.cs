@@ -226,11 +226,16 @@ public class AllegroPublisher
         var offerIdByEan = await ResolveOfferIdsAsync(listings.Select(r => r.Ean), log);
 
         int updated = 0, skipped = 0, failed = 0;
+        var unlisted = new List<string>();
         foreach (var row in listings)
         {
             if (!offerIdByEan.TryGetValue(row.Ean, out var offer))
             {
                 skipped++;
+                if (row.Count > 0)
+                {
+                    unlisted.Add(row.Ean);
+                }
                 continue;
             }
 
@@ -268,7 +273,10 @@ public class AllegroPublisher
             }
         }
 
-        log?.Invoke($"Publish finished: {updated} updated, {skipped} skipped, {failed} failed.");
+        new UnlistedTracker().Record(unlisted);
+
+        log?.Invoke($"Publish finished: {updated} updated, {skipped} skipped, {failed} failed. " +
+                    $"{unlisted.Count} sellable products have no offer.");
         return updated;
     }
 
