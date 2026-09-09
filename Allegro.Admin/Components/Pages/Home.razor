@@ -89,9 +89,12 @@
                         <div class="form-text">Products priced below this value are excluded from the CSV.</div>
                     </div>
                     <div class="col-6">
-                        <label class="form-label" for="maxMinOrderInput">Max minimum order</label>
-                        <input id="maxMinOrderInput" class="form-control" type="number" min="0" @bind="_csvOptions.MaxMinOrderQuantity" />
-                        <div class="form-text">Excludes products whose required minimum order is this value or higher. 0 = off.</div>
+                        <label class="form-label" for="bundleFromInput">Sell as a pack above</label>
+                        <input id="bundleFromInput" class="form-control" type="number" min="0" @bind="_csvOptions.BundleFromQuantity" />
+                        <div class="form-text">
+                            Products whose supplier minimum order is above this are listed as a single pack
+                            of that size, priced and stocked per pack, instead of individually. 0 = off.
+                        </div>
                     </div>
                 </div>
 

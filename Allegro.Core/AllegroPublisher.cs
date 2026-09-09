@@ -459,9 +459,9 @@ public class AllegroPublisher
             return $"price {product.Price.ToString(CultureInfo.InvariantCulture)} < {options.MinimalPrice.ToString(CultureInfo.InvariantCulture)}";
         }
 
-        if (options.MaxMinOrderQuantity > 0 && product.MinOrderQuantity >= options.MaxMinOrderQuantity)
+        if (options.IsBundle(product) && product.Count < product.MinOrderQuantity)
         {
-            return $"min order {product.MinOrderQuantity} >= {options.MaxMinOrderQuantity}";
+            return $"bundle of {product.MinOrderQuantity}, only {product.Count} in stock";
         }
 
         return "does not pass the CSV options";
@@ -576,6 +576,39 @@ public class AllegroPublisher
             $"{ApiBase}/sale/offer-publication-commands/{Guid.NewGuid()}",
             payload,
             active ? "activate offer" : "end offer");
+    }
+
+    /// <summary>
+    /// Issues a read-only GET against the Allegro API and returns the status code with the raw body.
+    /// Used by <see cref="BundleProbe"/> to inspect products, categories and existing offers without
+    /// parsing them into DTOs first. Never throws on a non-2xx - the caller decides what that means.
+    /// </summary>
+    public async Task<(int Status, string Body)> GetRawAsync(string path)
+    {
+        await EnsureValidTokenAsync();
+
+        var url = path.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? path : $"{ApiBase}{path}";
+        var response = await _http.SendAsync(CreateApiRequest(HttpMethod.Get, url));
+        return ((int)response.StatusCode, await response.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>
+    /// Sends a raw JSON body to the Allegro API and returns the status code with the raw response.
+    /// Like <see cref="GetRawAsync"/> it never throws on a non-2xx: callers that are probing what the
+    /// API will accept need to read the validation errors, not catch an exception.
+    /// </summary>
+    public async Task<(int Status, string Body)> SendJsonRawAsync(HttpMethod method, string path, string json)
+    {
+        await EnsureValidTokenAsync();
+
+        var url = path.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? path : $"{ApiBase}{path}";
+        var request = CreateApiRequest(method, url);
+        var content = new StringContent(json, Encoding.UTF8);
+        content.Headers.ContentType = new MediaTypeHeaderValue(ApiMediaType);
+        request.Content = content;
+
+        var response = await _http.SendAsync(request);
+        return ((int)response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 
     private async Task SendCommandAsync(string url, object payload, string what)
