@@ -70,14 +70,7 @@ public sealed class BundlePlan
 
     private static List<ProductInfo> SelectCandidates(List<ProductInfo> products, ListingOptions options)
     {
-        return products
-            .Where(p => p.MinOrderQuantity > options.BundleFromQuantity)
-            .Where(p => !string.IsNullOrWhiteSpace(p.EAN) && !p.EAN.Contains("—"))
-            .Where(p => !p.CategoriesUrls.Any(url => options.CategoriesBlackList.Any(url.Contains)))
-            .Where(p => !options.EansBlackList.Contains(p.EAN))
-            .Where(p => p.Price >= options.MinimalPrice)
-            .Where(p => p.Count >= p.MinOrderQuantity)
-            .ToList();
+        return products.Where(options.IsBundle).Where(options.Includes).ToList();
     }
 
     private BundleChange BuildChange(ProductInfo product, OfferSnapshot? offer, ListingOptions options)

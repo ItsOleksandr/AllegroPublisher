@@ -6,16 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Allegro.Core;
 
-/// <summary>
-/// Talks to the official Allegro REST API (https://developer.allegro.pl).
-/// Authenticates a single seller account via the OAuth2 <b>device flow</b> and
-/// publishes the parsed catalogue by updating price and stock on existing offers. Offers are matched by <c>external.id == EAN</c> — the standard
-/// way Allegro keys offers to an external inventory system. Products with no
-/// matching offer are skipped (creating new offers is out of scope).
-///
-/// This lives in Allegro.Core so both the admin web app and the console app can use it.
-/// Settings/tokens are persisted through <see cref="SaverExtensions.AllegroSettings"/>.
-/// </summary>
 public class AllegroPublisher
 {
     private const string AuthBase = "https://allegro.pl";
@@ -31,19 +21,10 @@ public class AllegroPublisher
     }
 
     public AllegroSettings Settings => SaverExtensions.AllegroSettings.Value;
-
-    /// <summary>Persist client id / secret / currency edited elsewhere.</summary>
     public void SaveSettings() => SaverExtensions.AllegroSettings.Write();
 
-    // ---------------------------------------------------------------- device flow
-
     public record DeviceAuthorization(string UserCode, string VerificationUri, string DeviceCode, int Interval, int ExpiresIn);
-
-    /// <summary>
-    /// Requests a device/user code from Allegro. The caller shows
-    /// <see cref="DeviceAuthorization.UserCode"/> + <see cref="DeviceAuthorization.VerificationUri"/>
-    /// to the user, then calls <see cref="PollForTokenAsync"/>.
-    /// </summary>
+    
     public async Task<DeviceAuthorization> StartDeviceFlowAsync(Action<string>? log = null)
     {
         if (string.IsNullOrWhiteSpace(Settings.ClientId) || string.IsNullOrWhiteSpace(Settings.ClientSecret))
@@ -75,8 +56,7 @@ public class AllegroPublisher
 
         return new DeviceAuthorization(device.UserCode, uri, device.DeviceCode, device.Interval, device.ExpiresIn);
     }
-
-    /// <summary>Polls the token endpoint until the user approves, is denied, or it times out. Returns true on success.</summary>
+    
     public async Task<bool> PollForTokenAsync(DeviceAuthorization auth, Action<string>? log = null)
     {
         var interval = TimeSpan.FromSeconds(Math.Max(auth.Interval, 5));
@@ -125,9 +105,7 @@ public class AllegroPublisher
         log?.Invoke("Authorization timed out. Please try connecting again.");
         return false;
     }
-
-    // Serializes refresh across concurrent operations within one process, so the web app can't
-    // race itself and burn a single-use refresh token twice.
+    
     private static readonly SemaphoreSlim _refreshLock = new(1, 1);
 
     private async Task EnsureValidTokenAsync()
@@ -135,10 +113,6 @@ public class AllegroPublisher
         await _refreshLock.WaitAsync();
         try
         {
-            // The nightly console and the web panel share allegro_settings.txt, and Allegro
-            // refresh tokens are single-use: each refresh invalidates the previous one. Always
-            // start from the freshest copy on disk, or we'd refresh with a token the other
-            // process already rotated away - the usual cause of "reconnect the account".
             SaverExtensions.AllegroSettings.Read();
 
             if (!Settings.IsConnected)
@@ -155,9 +129,7 @@ public class AllegroPublisher
             {
                 return;
             }
-
-            // The other process may have refreshed at the same moment and written a valid token.
-            // Reload and, if it's now fresh, use it; otherwise try one more refresh before giving up.
+            
             SaverExtensions.AllegroSettings.Read();
             if (DateTime.UtcNow < Settings.AccessTokenExpiresUtc.AddMinutes(-5) && !string.IsNullOrEmpty(Settings.AccessToken))
             {
@@ -173,14 +145,7 @@ public class AllegroPublisher
             _refreshLock.Release();
         }
     }
-
-    /// <summary>
-    /// Proactively refreshes the token while there is still time, so it never lapses on its own.
-    /// Meant to be called on a timer by a single long-running process (the web app). Refreshes
-    /// only when the access token is within <paramref name="refreshWithin"/> of expiry, so it
-    /// piggybacks on whatever the console already did and rarely races it. Returns true if the
-    /// stored token is valid afterwards.
-    /// </summary>
+    
     public async Task<bool> KeepAliveAsync(TimeSpan refreshWithin, Action<string>? log = null)
     {
         await _refreshLock.WaitAsync();
@@ -246,24 +211,22 @@ public class AllegroPublisher
         SaverExtensions.AllegroSettings.Write();
     }
 
-    // ------------------------------------------------------------------- publish
-
     public async Task<int> PublishAsync(Action<string>? log = null)
     {
         await EnsureValidTokenAsync();
 
         var options = SaverExtensions.ListingOptions.Read();
-        var rows = BuildListings(SaverExtensions.Products.Read().Values, options);
-        log?.Invoke($"{rows.Count} products with an EAN, {rows.Count(r => r.Count > 0)} of them sellable.");
-        if (rows.Count == 0)
+        var listings = BuildListings(SaverExtensions.Products.Read().Values, options);
+        log?.Invoke($"{listings.Count} products with an EAN, {listings.Count(r => r.Count > 0)} of them sellable.");
+        if (listings.Count == 0)
         {
             return 0;
         }
 
-        var offerIdByEan = await ResolveOfferIdsAsync(rows.Select(r => r.Ean), log);
+        var offerIdByEan = await ResolveOfferIdsAsync(listings.Select(r => r.Ean), log);
 
         int updated = 0, skipped = 0, failed = 0;
-        foreach (var row in rows)
+        foreach (var row in listings)
         {
             if (!offerIdByEan.TryGetValue(row.Ean, out var offer))
             {
@@ -311,7 +274,7 @@ public class AllegroPublisher
 
     private static List<ListingRow> BuildListings(IEnumerable<ProductInfo> products, ListingOptions options)
     {
-        var rows = new List<ListingRow>();
+        var listings = new List<ListingRow>();
         foreach (var product in products)
         {
             if (string.IsNullOrWhiteSpace(product.EAN))
@@ -319,24 +282,17 @@ public class AllegroPublisher
                 continue;
             }
 
-            rows.Add(new ListingRow(
+            listings.Add(new ListingRow(
                 product.EAN,
                 options.Includes(product) ? options.GetOfferStock(product) : 0,
                 options.GetOfferPrice(product)));
         }
-        return rows;
+        return listings;
     }
 
-    /// <summary>An active offer whose product no longer passes the listing options, and why.</summary>
+    
     public record OrphanOffer(string Id, string Ean, string Name, string Reason);
-
-    /// <summary>
-    /// Finds <b>active</b> offers listed by this app (they carry an <c>external.id</c>) whose product
-    /// is in the parsed catalogue but <b>no longer passes the current listing options</b> — a blacklisted
-    /// category, a blacklisted EAN, stock below the minimum, and so on. These are the offers that
-    /// should not be on sale any more. Offers listed manually (no <c>external.id</c>) and products
-    /// the parser has never seen are left alone. Read-only: use <see cref="EndOffersAsync"/> to act.
-    /// </summary>
+    
     public async Task<List<OrphanOffer>> FindOrphanOffersAsync(Action<string>? log = null)
     {
         await EnsureValidTokenAsync();
@@ -631,8 +587,6 @@ public class AllegroPublisher
             return null;
         }
     }
-
-    // ------------------------------------------------------------------- DTOs
 
     private record ListingRow(string Ean, int Count, decimal Price);
 
