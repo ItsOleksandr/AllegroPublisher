@@ -10,6 +10,7 @@ public sealed class BundlePlan
     public const int MaxNameLength = 75;
 
     private readonly AllegroPublisher _publisher;
+    private Dictionary<string, int> _listedPacks = new(StringComparer.OrdinalIgnoreCase);
 
     public BundlePlan(AllegroPublisher publisher)
     {
@@ -47,7 +48,9 @@ public sealed class BundlePlan
                             .GroupBy(p => p.EAN, StringComparer.OrdinalIgnoreCase)
                             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-        var reverts = SaverExtensions.Bundles.Read()
+        _listedPacks = new Dictionary<string, int>(SaverExtensions.Bundles.Read(), StringComparer.OrdinalIgnoreCase);
+
+        var reverts = _listedPacks
             .Where(entry => !qualified.Contains(entry.Key) && byEan.ContainsKey(entry.Key))
             .Select(entry => byEan[entry.Key])
             .ToList();
@@ -80,10 +83,12 @@ public sealed class BundlePlan
         var newStock = options.GetOfferStock(product);
         var newName = BuildName(product.Name, pack);
 
+        var listedPack = offer is not null && _listedPacks.TryGetValue(product.EAN, out var known) ? known : 0;
+
         var problem = offer is null
             ? "no offer on Allegro - would have to be created from scratch"
-            : offer.Quantity == pack
-                ? "already a bundle of this size"
+            : listedPack == pack
+                ? $"already a pack of {pack}"
                 : null;
 
         return new BundleChange(
@@ -140,7 +145,7 @@ public sealed class BundlePlan
         return string.Join(' ', builder.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
-    public record OfferSnapshot(string Id, string Name, decimal Price, int Quantity, string Status);
+    public record OfferSnapshot(string Id, string Name, decimal Price, string Status);
 
     public async Task<Dictionary<string, OfferSnapshot>> ResolveOffersAsync(IEnumerable<string> eans, Action<string>? log)
     {
@@ -173,7 +178,6 @@ public sealed class BundlePlan
                     id,
                     offer?["name"]?.GetValue<string>() ?? "",
                     decimal.TryParse(amount, NumberStyles.Number, CultureInfo.InvariantCulture, out var price) ? price : 0m,
-                    0,
                     offer?["publication"]?["status"]?.GetValue<string>() ?? "");
             }
         }

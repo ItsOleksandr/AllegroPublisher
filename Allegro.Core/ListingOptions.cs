@@ -5,7 +5,7 @@ public class ListingOptions
     public int MinimalProductCount { get; set; } = 10;
     public decimal MinimalPrice { get; set; } = 0m;
     public int BundleFromQuantity { get; set; } = 5;
-    public decimal BundleMultiplier { get; set; } = 1m;
+    public decimal BundleMultiplier { get; set; } = 3m;
     public List<string> CategoriesBlackList { get; set; } = new List<string>();
     public List<string> EansBlackList { get; set; } = new List<string>();
     
@@ -33,14 +33,12 @@ public class ListingOptions
     public decimal GetOfferPrice(ProductInfo product)
     {
         var cost = product.Price * GetPackSize(product);
-        var price = cost * GetMultiplier(cost);
 
-        if (IsBundle(product) && BundleMultiplier > 0m)
-        {
-            price *= BundleMultiplier;
-        }
+        var markup = IsBundle(product)
+            ? (BundleMultiplier > 0m ? BundleMultiplier : DefaultMultiplier)
+            : GetMultiplier(cost);
 
-        return Math.Round(price, 2, MidpointRounding.AwayFromZero);
+        return Math.Round(cost * markup, 2, MidpointRounding.AwayFromZero);
     }
 
     public int GetOfferStock(ProductInfo product) => product.Count / GetPackSize(product);

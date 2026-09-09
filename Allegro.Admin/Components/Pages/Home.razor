@@ -100,9 +100,10 @@
                         <label class="form-label" for="bundleMultiplierInput">Pack multiplier</label>
                         <input id="bundleMultiplierInput" class="form-control" type="number" step="0.01" min="0" @bind="_listingOptions.BundleMultiplier" />
                         <div class="form-text">
-                            Applied to a pack price on top of the tier above, so buying in bulk costs less per
-                            item: <strong>0.85</strong> makes every pack 15% cheaper. <strong>1</strong> leaves
-                            pack pricing alone. Single-unit offers are never touched by it.
+                            The <strong>whole</strong> markup on a pack — the tiers above do not apply to packs at
+                            all, so a pack costs the same per item however cheap that item is. <strong>3</strong>
+                            triples the supplier's price for the pack; lower it to sell bulk cheaper. Single-unit
+                            offers keep using the tiers.
                         </div>
                     </div>
                 </div>
