@@ -1,15 +1,15 @@
 # AllegroApp
 
 Keeps an [Allegro](https://allegro.pl) storefront in sync with a supplier's
-catalogue. It scrapes the supplier's product pages, turns them into a priced
-CSV, and pushes price and stock onto the matching Allegro offers — so a store
-with thousands of listings stays current without anyone editing offers by hand.
+catalogue. It scrapes the supplier's product pages, prices them, and pushes
+price and stock onto the matching Allegro offers — so a store with thousands of
+listings stays current without anyone editing offers by hand.
 
 The work splits into three projects around one shared core:
 
 ```
-Allegro.Core       Allegro REST API client, pricing rules, CSV, settings, notifications
-├── Allegro.Console   headless run: scrape → CSV → publish (cron / nightly)
+Allegro.Core       Allegro REST API client, pricing rules, packs, settings, notifications
+├── Allegro.Console   headless run: scrape → pack → publish (cron / nightly)
 └── Allegro.Admin     Blazor Server panel: connect account, tune rules, publish on demand
 ```
 
@@ -26,19 +26,30 @@ images. Long runs are the norm, so parsing is resumable: progress is written to
 `last_parse.txt` and a crashed or interrupted session can be continued instead
 of restarted.
 
-**2 — Price.** `CSVMaker` applies the rules in `CSVOptions`: a tiered multiplier
-(cheap items get marked up more aggressively than expensive ones), a minimum
-stock threshold, a minimum price floor, and category or EAN blacklists for
-things that should never be listed.
+**2 — Price.** `ListingOptions` holds every rule that decides a product's fate: a
+tiered multiplier (cheap items get marked up more aggressively than expensive
+ones), a minimum stock threshold, a minimum price floor, and category or EAN
+blacklists for things that should never be listed.
 
-**3 — Publish.** `AllegroPublisher` authenticates the seller account through
+**3 — Pack.** Some products the supplier will not sell singly — its minimum order
+is 10, 50, 500. Listing one unit of those would be a lie, so above the
+`BundleFromQuantity` threshold the whole pack becomes the unit of sale.
+`BundlePlan` works out which offers that applies to, `BundleConverter` rewrites
+them **in place**: `productSet.quantity`, price, stock and title move in a single
+request, so a pack is never briefly on sale for the price of one item. The offer
+keeps its id, history and search position. Raising the threshold takes those
+offers back to single units.
+
+**4 — Publish.** `AllegroPublisher` authenticates the seller account through
 Allegro's OAuth2 **device flow**, then matches each row to an existing offer by
 `external.id == EAN` — the standard way Allegro keys offers to an external
 inventory system — and updates price and stock. Products with no matching offer
 are skipped; creating new offers is deliberately out of scope.
 
-**4 — Report.** `TelegramNotify` sends a summary when a run finishes, so a
-failed nightly job is noticed the same day rather than the next week.
+**5 — Report.** `TelegramNotify` speaks up when something needs a human:
+the supplier login has failed three times running, or `UnlistedTracker` has
+counted more than ten sellable products that still have no offer and so need
+listing by hand. A quiet run sends nothing.
 
 ### Keeping the token alive
 
@@ -57,9 +68,13 @@ The shared library — no UI, no entry point.
 | File | Responsibility |
 |---|---|
 | `AllegroPublisher.cs` | Allegro REST API client: device flow, token refresh, offer lookup and update |
-| `CSVMaker.cs` / `CSVOptions.cs` | Builds the publish CSV and holds the pricing and filtering rules |
+| `ListingOptions.cs` | Every rule in one place: what gets sold, at what price, singly or as a pack |
+| `BundlePlan.cs` | Works out which offers should be packs, and of what size. Writes nothing |
+| `BundleConverter.cs` | Applies that plan — the only code that rewrites a live offer |
+| `OfferCreator.cs` | Finds catalogue cards for products that have no offer at all |
+| `UnlistedTracker.cs` | Counts products still waiting to be listed by hand |
 | `Saver.cs` | Small typed JSON file store used for every settings file |
-| `TelegramNotify.cs` | Run summaries to a Telegram chat |
+| `TelegramNotify.cs` | Alerts to a Telegram chat |
 | `ProductInfo.cs`, `AllegroSettings.cs` | Shared models |
 
 ### Allegro.Console
@@ -68,11 +83,16 @@ The unattended runner, driven by command-line flags:
 
 | Flag | Effect |
 |---|---|
-| `--mode-xml=new_parse` | Re-extract product URLs from the supplier sitemaps |
-| `--mode-xml=load_last_session` | Resume the previous, interrupted parse |
+| *(no flags)* | The full run: scrape → pack → publish |
+| `--load_last_session` | Resume the previous, interrupted parse |
 | `--start-index=N` | Start from a given position in the URL list |
-| `--mode=manual` | Interactive run — ignores the URL blacklist |
+| `--test-url=<url>` | Parse one product page and print the result — nothing is saved or published |
 | `--configure-browser` | Opens a visible browser so the supplier login can be completed once and persisted |
+| `--visible` | Runs the browser with a window instead of headless |
+
+Everything to do with Allegro itself — reviewing the pack plan, converting,
+scanning for unlisted products, ending offers — lives in the admin panel rather
+than behind a flag.
 
 ### Allegro.Admin
 
@@ -99,11 +119,14 @@ gitignored, because these files hold real credentials and tokens.
 |---|---|
 | `allegro_settings.txt` | Client ID, Client Secret, OAuth tokens, currency |
 | `creditials.txt` | Supplier login |
-| `csv_options.txt` | Pricing tiers, thresholds, blacklists |
+| `listing_options.txt` | Pricing tiers, thresholds, blacklists, pack threshold |
 | `admin_options.txt` | Admin panel settings |
 | `urls.txt`, `urls_black_list.txt` | Product URL list and exclusions |
 | `last_parse.txt` | Resume point for an interrupted parse |
-| `products.csv` | Generated output |
+| `products_dictionary.txt` | The parsed catalogue — the single source every step reads |
+| `bundles.txt` | Which EANs are listed as packs, and of what size |
+| `unlisted.txt`, `known_unlisted.txt` | Products with no offer, and the ones already acknowledged |
+| `offer_backups/` | Each offer as it was before the converter rewrote it |
 
 Files are created with defaults on first access, so a fresh checkout starts
 empty rather than crashing.
@@ -126,7 +149,7 @@ dotnet run --project Allegro.Admin
 Or run the full unattended pipeline:
 
 ```bash
-dotnet run --project Allegro.Console -- --mode-xml=new_parse
+dotnet run --project Allegro.Console
 ```
 
 First time only, sign in to the supplier once so the browser profile is stored:
@@ -139,5 +162,5 @@ dotnet run --project Allegro.Console -- --configure-browser
 
 The scraper targets one specific supplier's page structure. Pointing it at a
 different site means rewriting the selectors in `ProductExtracter` — the rest of
-the pipeline (pricing, CSV, publishing) is independent of where the products
+the pipeline (pricing, packing, publishing) is independent of where the products
 came from.
