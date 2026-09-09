@@ -336,9 +336,11 @@
                     {
                         <div class="alert alert-info py-2">
                             <strong>@_convertibleBundles</strong> offer(s) can be converted in place.
-                            @if (_blockedBundles > 0)
+                            @foreach (var reason in _bundlePlan.Where(c => !c.CanConvert)
+                                                              .GroupBy(c => c.Problem)
+                                                              .OrderByDescending(g => g.Count()))
                             {
-                                <span>@_blockedBundles product(s) have no offer to convert — they would have to be created.</span>
+                                <div class="small">@reason.Count() — @reason.Key</div>
                             }
                         </div>
                         <div class="table-responsive mb-3" style="max-height: 260px; overflow-y: auto;">
