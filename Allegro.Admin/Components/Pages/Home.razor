@@ -97,13 +97,12 @@
                         </div>
                     </div>
                     <div class="col-6">
-                        <label class="form-label" for="bundleMultiplierInput">Pack multiplier</label>
-                        <input id="bundleMultiplierInput" class="form-control" type="number" step="0.01" min="0" @bind="_listingOptions.BundleMultiplier" />
+                        <label class="form-label" for="packDivisorInput">Split the pack by</label>
+                        <input id="packDivisorInput" class="form-control" type="number" min="1" @bind="_listingOptions.PackDivisor" />
                         <div class="form-text">
-                            The <strong>whole</strong> markup on a pack — the tiers above do not apply to packs at
-                            all, so a pack costs the same per item however cheap that item is. <strong>3</strong>
-                            triples the supplier's price for the pack; lower it to sell bulk cheaper. Single-unit
-                            offers keep using the tiers.
+                            Sell a fraction of the supplier's minimum order instead of all of it:
+                            <strong>2</strong> lists half, <strong>3</strong> a third. A minimum order that does not
+                            divide evenly is listed whole. <strong>1</strong> = the whole minimum order, as before.
                         </div>
                     </div>
                 </div>
@@ -141,6 +140,42 @@
                         </tbody>
                     </table>
                     <button class="btn btn-sm btn-outline-primary" @onclick="AddPriceTier">Add tier</button>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Pack multipliers</label>
+                    <div class="form-text mb-2">
+                        The same ladder, but for packs, and read against the <strong>cost of the whole pack</strong>
+                        rather than of one item — so bulk can be marked up more gently. Packs never use the tiers
+                        above. Leave the table empty to give every pack the default.
+                    </div>
+                    <table class="table table-sm align-middle mb-2" style="max-width: 520px;">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Pack cost up to</th>
+                                <th>× multiplier</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var tier in _listingOptions.BundlePriceMultipliers.OrderBy(t => t.MaxPrice).ToList())
+                            {
+                                <tr>
+                                    <td><input class="form-control form-control-sm" type="number" step="0.01" min="0" @bind="tier.MaxPrice" /></td>
+                                    <td><input class="form-control form-control-sm" type="number" step="0.01" min="0" @bind="tier.Multiplier" /></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => _listingOptions.BundlePriceMultipliers.Remove(tier)">✕</button>
+                                    </td>
+                                </tr>
+                            }
+                            <tr>
+                                <td class="text-muted small align-middle">above → default</td>
+                                <td><input class="form-control form-control-sm" type="number" step="0.01" min="0" @bind="_listingOptions.BundleDefaultMultiplier" /></td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="AddBundlePriceTier">Add tier</button>
                 </div>
 
                 <div class="row g-3 mb-2">
@@ -547,6 +582,14 @@
             ? 10m
             : _listingOptions.PriceMultipliers.Max(t => t.MaxPrice) + 10m;
         _listingOptions.PriceMultipliers.Add(new PriceTier { MaxPrice = nextBound, Multiplier = 1m });
+    }
+
+    private void AddBundlePriceTier()
+    {
+        var nextBound = _listingOptions.BundlePriceMultipliers.Count == 0
+            ? 100m
+            : _listingOptions.BundlePriceMultipliers.Max(t => t.MaxPrice) + 100m;
+        _listingOptions.BundlePriceMultipliers.Add(new PriceTier { MaxPrice = nextBound, Multiplier = _listingOptions.BundleDefaultMultiplier });
     }
 
     private void SaveAllOptions()

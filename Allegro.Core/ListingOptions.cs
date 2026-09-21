@@ -5,10 +5,10 @@ public class ListingOptions
     public int MinimalProductCount { get; set; } = 10;
     public decimal MinimalPrice { get; set; } = 0m;
     public int BundleFromQuantity { get; set; } = 5;
-    public decimal BundleMultiplier { get; set; } = 3m;
+    public int PackDivisor { get; set; } = 1;
     public List<string> CategoriesBlackList { get; set; } = new List<string>();
     public List<string> EansBlackList { get; set; } = new List<string>();
-    
+
     public List<PriceTier> PriceMultipliers { get; set; } = new()
     {
         new PriceTier { MaxPrice = 10m, Multiplier = 1.5m },
@@ -16,43 +16,55 @@ public class ListingOptions
     };
     public decimal DefaultMultiplier { get; set; } = 3m;
 
+    public List<PriceTier> BundlePriceMultipliers { get; set; } = new();
+    public decimal BundleDefaultMultiplier { get; set; } = 3m;
+
     public bool Includes(ProductInfo product) =>
         !product.CategoriesUrls.Any(url => CategoriesBlackList.Any(url.Contains))
         && !EansBlackList.Contains(product.EAN)
         && !string.IsNullOrWhiteSpace(product.EAN)
         && !product.EAN.Contains("—")
-        && product.Count >= MinimalProductCount
         && product.Price >= MinimalPrice
-        && (!IsBundle(product) || product.Count >= product.MinOrderQuantity);
+        && product.Count >= MinimalProductCount
+        && GetOfferStock(product) >= 1;
 
     public bool IsBundle(ProductInfo product) =>
         BundleFromQuantity > 0 && product.MinOrderQuantity > BundleFromQuantity;
 
-    public int GetPackSize(ProductInfo product) => IsBundle(product) ? product.MinOrderQuantity : 1;
+    public int GetPackSize(ProductInfo product)
+    {
+        if (!IsBundle(product))
+        {
+            return 1;
+        }
+
+        var minOrder = product.MinOrderQuantity;
+        return PackDivisor > 1 && minOrder % PackDivisor == 0 ? minOrder / PackDivisor : minOrder;
+    }
 
     public decimal GetOfferPrice(ProductInfo product)
     {
         var cost = product.Price * GetPackSize(product);
 
         var markup = IsBundle(product)
-            ? (BundleMultiplier > 0m ? BundleMultiplier : DefaultMultiplier)
-            : GetMultiplier(cost);
+            ? GetMultiplier(cost, BundlePriceMultipliers, BundleDefaultMultiplier)
+            : GetMultiplier(cost, PriceMultipliers, DefaultMultiplier);
 
         return Math.Round(cost * markup, 2, MidpointRounding.AwayFromZero);
     }
 
     public int GetOfferStock(ProductInfo product) => product.Count / GetPackSize(product);
 
-    private decimal GetMultiplier(decimal price)
+    private static decimal GetMultiplier(decimal price, List<PriceTier> tiers, decimal fallback)
     {
-        foreach (var tier in PriceMultipliers.OrderBy(t => t.MaxPrice))
+        foreach (var tier in tiers.OrderBy(t => t.MaxPrice))
         {
             if (price <= tier.MaxPrice)
             {
                 return tier.Multiplier;
             }
         }
-        return DefaultMultiplier;
+        return fallback;
     }
 }
 public class PriceTier
