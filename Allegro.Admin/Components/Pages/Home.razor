@@ -97,16 +97,9 @@
                         </div>
                     </div>
                     <div class="col-6">
-                        <label class="form-label" for="packDivisorInput">Split the pack by</label>
-                        <input id="packDivisorInput" class="form-control" type="number" min="1" @bind="_listingOptions.PackDivisor" />
-                        <div class="form-text">
-                            Sell a fraction of the supplier's minimum order instead of all of it:
-                            <strong>2</strong> lists half, <strong>3</strong> a third. A minimum order that does not
-                            divide evenly is listed whole. <strong>1</strong> = the whole minimum order, as before.
-                        </div>
                     </div>
                 </div>
-
+                
                 <div class="mb-3">
                     <label class="form-label">Price multipliers</label>
                     <div class="form-text mb-2">
@@ -141,6 +134,45 @@
                     </table>
                     <button class="btn btn-sm btn-outline-primary" @onclick="AddPriceTier">Add tier</button>
                 </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Pack splitting</label>
+                    <div class="form-text mb-2">
+                        How much of the supplier's minimum order goes into one pack. The first row whose
+                        <strong>minimum order up to</strong> is ≥ the product's minimum order wins; anything larger
+                        uses the default. A minimum order that does not divide evenly by its divisor is listed
+                        whole, so nothing is ever rounded away. Divisor <strong>1</strong> = do not split.
+                    </div>
+                    <table class="table table-sm align-middle mb-2" style="max-width: 520px;">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Minimum order up to</th>
+                                <th>÷ divisor</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var tier in _listingOptions.PackDivisors.OrderBy(t => t.MaxMinOrder).ToList())
+                            {
+                                <tr>
+                                    <td><input class="form-control form-control-sm" type="number" min="0" @bind="tier.MaxMinOrder" /></td>
+                                    <td><input class="form-control form-control-sm" type="number" min="1" @bind="tier.Divisor" /></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => _listingOptions.PackDivisors.Remove(tier)">✕</button>
+                                    </td>
+                                </tr>
+                            }
+                            <tr>
+                                <td class="text-muted small align-middle">above → default</td>
+                                <td><input class="form-control form-control-sm" type="number" min="1" @bind="_listingOptions.PackDefaultDivisor" /></td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="AddPackTier">Add tier</button>
+                </div>
+
+                
 
                 <div class="mb-3">
                     <label class="form-label">Pack multipliers</label>
@@ -582,6 +614,14 @@
             ? 10m
             : _listingOptions.PriceMultipliers.Max(t => t.MaxPrice) + 10m;
         _listingOptions.PriceMultipliers.Add(new PriceTier { MaxPrice = nextBound, Multiplier = 1m });
+    }
+
+    private void AddPackTier()
+    {
+        var nextBound = _listingOptions.PackDivisors.Count == 0
+            ? 10
+            : _listingOptions.PackDivisors.Max(t => t.MaxMinOrder) * 2;
+        _listingOptions.PackDivisors.Add(new PackTier { MaxMinOrder = nextBound, Divisor = 1 });
     }
 
     private void AddBundlePriceTier()

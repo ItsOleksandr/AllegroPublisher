@@ -5,7 +5,12 @@ public class ListingOptions
     public int MinimalProductCount { get; set; } = 10;
     public decimal MinimalPrice { get; set; } = 0m;
     public int BundleFromQuantity { get; set; } = 5;
-    public int PackDivisor { get; set; } = 1;
+    public List<PackTier> PackDivisors { get; set; } = new()
+    {
+        new PackTier { MaxMinOrder = 10, Divisor = 1 },
+        new PackTier { MaxMinOrder = 50, Divisor = 5 },
+    };
+    public int PackDefaultDivisor { get; set; } = 10;
     public List<string> CategoriesBlackList { get; set; } = new List<string>();
     public List<string> EansBlackList { get; set; } = new List<string>();
 
@@ -39,7 +44,20 @@ public class ListingOptions
         }
 
         var minOrder = product.MinOrderQuantity;
-        return PackDivisor > 1 && minOrder % PackDivisor == 0 ? minOrder / PackDivisor : minOrder;
+        var divisor = GetPackDivisor(minOrder);
+        return divisor > 1 && minOrder % divisor == 0 ? minOrder / divisor : minOrder;
+    }
+
+    public int GetPackDivisor(int minOrder)
+    {
+        foreach (var tier in PackDivisors.OrderBy(t => t.MaxMinOrder))
+        {
+            if (minOrder <= tier.MaxMinOrder)
+            {
+                return tier.Divisor;
+            }
+        }
+        return PackDefaultDivisor;
     }
 
     public decimal GetOfferPrice(ProductInfo product)
@@ -71,4 +89,10 @@ public class PriceTier
 {
     public decimal MaxPrice { get; set; }
     public decimal Multiplier { get; set; }
+}
+
+public class PackTier
+{
+    public int MaxMinOrder { get; set; }
+    public int Divisor { get; set; }
 }
