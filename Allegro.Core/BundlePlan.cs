@@ -60,12 +60,13 @@ public sealed class BundlePlan
         }
 
         var offers = await ResolveOffersAsync(candidates.Concat(reverts).Select(p => p.EAN), log);
+        var campaigns = await _publisher.ResolveCampaignOffersAsync(log);
 
         var changes = new List<BundleChange>();
         foreach (var product in candidates.OrderByDescending(p => p.MinOrderQuantity).Concat(reverts))
         {
             offers.TryGetValue(product.EAN, out var offer);
-            changes.Add(BuildChange(product, offer, options));
+            changes.Add(BuildChange(product, offer, options, campaigns));
         }
 
         return changes;
@@ -76,7 +77,9 @@ public sealed class BundlePlan
         return products.Where(options.IsBundle).Where(options.Includes).ToList();
     }
 
-    private BundleChange BuildChange(ProductInfo product, OfferSnapshot? offer, ListingOptions options)
+    private BundleChange BuildChange(
+        ProductInfo product, OfferSnapshot? offer, ListingOptions options,
+        Dictionary<string, AllegroPublisher.CampaignBadge>? campaigns)
     {
         var pack = options.GetPackSize(product);
         var packPrice = options.GetOfferPrice(product);
@@ -89,7 +92,11 @@ public sealed class BundlePlan
             ? "no offer on Allegro - would have to be created from scratch"
             : listedPack == pack
                 ? $"already a pack of {pack}"
-                : null;
+                : campaigns is null
+                    ? "campaigns could not be read - not converted in this run"
+                    : campaigns.TryGetValue(offer.Id, out var campaign)
+                        ? $"in campaign \"{campaign.Name}\" - converted once it ends"
+                        : null;
 
         return new BundleChange(
             product.EAN, offer?.Id, pack, offer?.Name ?? product.Name, newName,

@@ -5,6 +5,7 @@ public class AllegroSettings
     public string ClientId { get; set; } = "";
     public string ClientSecret { get; set; } = "";
     public string Currency { get; set; } = "PLN";
+    public string MarketplaceId { get; set; } = "allegro-pl";
     
     public string AccessToken { get; set; } = "";
     public string RefreshToken { get; set; } = "";

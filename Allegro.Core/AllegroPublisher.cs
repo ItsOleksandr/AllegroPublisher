@@ -224,8 +224,14 @@ public class AllegroPublisher
         }
 
         var offerIdByEan = await ResolveOfferIdsAsync(listings.Select(r => r.Ean), log);
+        var campaigns = await ResolveCampaignOffersAsync(log);
+        if (campaigns is null)
+        {
+            await NotifyAdminAsync("#AllegroApp Could not read Allegro campaigns, so no offer price was changed in this run. " +
+                                   "Stock was updated as usual. Check the publish log.", log);
+        }
 
-        int updated = 0, skipped = 0, failed = 0;
+        int updated = 0, unchanged = 0, frozen = 0, skipped = 0, failed = 0;
         var unlisted = new List<string>();
         foreach (var row in listings)
         {
@@ -240,16 +246,47 @@ public class AllegroPublisher
             }
 
             var offerId = offer.Id;
+            var price = offer.Price;
             try
             {
                 if (row.Count > 0)
                 {
-                    await ChangePriceAsync(offerId, row.Price);
-                    await ChangeQuantityAsync(offerId, row.Count);
+                    var changed = false;
+                    if (offer.Price != row.Price)
+                    {
+                        if (campaigns is null)
+                        {
+                            frozen++;
+                        }
+                        else if (campaigns.TryGetValue(offerId, out var campaign))
+                        {
+                            frozen++;
+                            log?.Invoke($"Price frozen on offer {offerId} (EAN {row.Ean}): {campaign.Describe()}, " +
+                                        $"keeping {offer.Price?.ToString(CultureInfo.InvariantCulture)} instead of " +
+                                        $"{row.Price.ToString(CultureInfo.InvariantCulture)} {Settings.Currency}.");
+                        }
+                        else
+                        {
+                            await ChangePriceAsync(offerId, row.Price);
+                            price = row.Price;
+                            changed = true;
+                        }
+                    }
+                    if (offer.Stock != row.Count)
+                    {
+                        await ChangeQuantityAsync(offerId, row.Count);
+                        changed = true;
+                    }
                     if (!offer.IsActive)
                     {
                         await SetOfferActiveAsync(offerId, true);
+                        changed = true;
                         log?.Invoke($"Re-activated offer {offerId} (EAN {row.Ean}).");
+                    }
+                    if (!changed)
+                    {
+                        unchanged++;
+                        continue;
                     }
                 }
                 else if (offer.IsActive)
@@ -263,7 +300,7 @@ public class AllegroPublisher
                 }
 
                 updated++;
-                log?.Invoke($"Updated offer {offerId} (EAN {row.Ean}) → price {row.Price.ToString(CultureInfo.InvariantCulture)} {Settings.Currency}, stock {row.Count}.");
+                log?.Invoke($"Updated offer {offerId} (EAN {row.Ean}) → price {price?.ToString(CultureInfo.InvariantCulture)} {Settings.Currency}, stock {row.Count}.");
             }
             catch (Exception e)
             {
@@ -275,9 +312,88 @@ public class AllegroPublisher
 
         new UnlistedTracker().Record(unlisted);
 
-        log?.Invoke($"Publish finished: {updated} updated, {skipped} skipped, {failed} failed. " +
-                    $"{unlisted.Count} sellable products have no offer.");
+        log?.Invoke($"Publish finished: {updated} updated, {unchanged} unchanged, {frozen} with a frozen price, " +
+                    $"{skipped} skipped, {failed} failed. {unlisted.Count} sellable products have no offer.");
         return updated;
+    }
+
+    public record CampaignBadge(string OfferId, string CampaignId, string Name, string Status, DateTimeOffset? Until)
+    {
+        public string Describe() =>
+            $"campaign \"{Name}\" ({Status}{(Until is null ? "" : $" until {Until.Value.ToLocalTime():yyyy-MM-dd HH:mm}")})";
+    }
+
+    private static readonly HashSet<string> PriceLockingStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "IN_VERIFICATION", "WAITING_FOR_PUBLICATION", "ACTIVE",
+    };
+
+    public async Task<Dictionary<string, CampaignBadge>?> ResolveCampaignOffersAsync(Action<string>? log = null)
+    {
+        await EnsureValidTokenAsync();
+
+        var result = new Dictionary<string, CampaignBadge>();
+        const int limit = 1000;
+        try
+        {
+            for (int offset = 0; ; offset += limit)
+            {
+                var request = CreateApiRequest(HttpMethod.Get,
+                    $"{ApiBase}/sale/badges?marketplace.id={Uri.EscapeDataString(Settings.MarketplaceId)}&limit={limit}&offset={offset}");
+                var response = await _http.SendAsync(request);
+                var body = await response.Content.ReadAsStringAsync();
+                if (!response.IsSuccessStatusCode)
+                {
+                    log?.Invoke($"Could not read campaigns ({(int)response.StatusCode}): {body} - no price is changed in this run.");
+                    return null;
+                }
+
+                var badges = JsonSerializer.Deserialize<BadgesListResponse>(body)?.Badges ?? new List<BadgeItem>();
+                foreach (var badge in badges)
+                {
+                    var offerId = badge.Offer?.Id;
+                    var status = badge.Process?.Status ?? "";
+                    if (string.IsNullOrEmpty(offerId) || !PriceLockingStatuses.Contains(status))
+                    {
+                        continue;
+                    }
+
+                    var until = DateTimeOffset.TryParse(badge.Publication?.To, CultureInfo.InvariantCulture,
+                        DateTimeStyles.AssumeUniversal, out var to) ? to : (DateTimeOffset?)null;
+                    var campaignId = badge.Campaign?.Id ?? "";
+                    result[offerId] = new CampaignBadge(offerId, campaignId,
+                        string.IsNullOrWhiteSpace(badge.Campaign?.Name) ? campaignId : badge.Campaign!.Name!, status, until);
+                }
+
+                if (badges.Count < limit)
+                {
+                    break;
+                }
+            }
+        }
+        catch (Exception e) when (e is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            log?.Invoke($"Could not read campaigns: {e.Message} - no price is changed in this run.");
+            return null;
+        }
+
+        log?.Invoke($"{result.Count} offers are in a campaign or waiting for one - their prices stay as they are.");
+        return result;
+    }
+
+    private static async Task NotifyAdminAsync(string text, Action<string>? log)
+    {
+        try
+        {
+            if (!await new TelegramNotify().SendAdminAsync(text))
+            {
+                log?.Invoke("Telegram notification failed.");
+            }
+        }
+        catch (Exception e)
+        {
+            log?.Invoke($"Telegram notification failed: {e.Message}");
+        }
     }
 
     private static List<ListingRow> BuildListings(IEnumerable<ProductInfo> products, ListingOptions options)
@@ -435,7 +551,7 @@ public class AllegroPublisher
     }
 
     /// <summary>An offer we matched, plus whether it is currently visible to buyers.</summary>
-    private record OfferRef(string Id, string Status)
+    private record OfferRef(string Id, string Status, decimal? Price, int? Stock)
     {
         public bool IsActive => string.Equals(Status, "ACTIVE", StringComparison.OrdinalIgnoreCase);
     }
@@ -466,7 +582,12 @@ public class AllegroPublisher
                 var ean = offer.External?.Id;
                 if (!string.IsNullOrEmpty(ean) && !string.IsNullOrEmpty(offer.Id))
                 {
-                    result[ean] = new OfferRef(offer.Id, offer.Publication?.Status ?? "");
+                    var amount = offer.SellingMode?.Price?.Amount;
+                    result[ean] = new OfferRef(
+                        offer.Id,
+                        offer.Publication?.Status ?? "",
+                        decimal.TryParse(amount, NumberStyles.Number, CultureInfo.InvariantCulture, out var price) ? price : null,
+                        offer.Stock?.Available);
                 }
             }
         }
@@ -626,6 +747,23 @@ public class AllegroPublisher
         [JsonPropertyName("name")] public string Name { get; set; } = "";
         [JsonPropertyName("external")] public ExternalId? External { get; set; }
         [JsonPropertyName("publication")] public OfferPublication? Publication { get; set; }
+        [JsonPropertyName("sellingMode")] public OfferSellingMode? SellingMode { get; set; }
+        [JsonPropertyName("stock")] public OfferStock? Stock { get; set; }
+    }
+
+    private class OfferSellingMode
+    {
+        [JsonPropertyName("price")] public OfferPrice? Price { get; set; }
+    }
+
+    private class OfferPrice
+    {
+        [JsonPropertyName("amount")] public string? Amount { get; set; }
+    }
+
+    private class OfferStock
+    {
+        [JsonPropertyName("available")] public int? Available { get; set; }
     }
 
     private class OfferPublication
@@ -636,5 +774,39 @@ public class AllegroPublisher
     private class ExternalId
     {
         [JsonPropertyName("id")] public string Id { get; set; } = "";
+    }
+
+    private class BadgesListResponse
+    {
+        [JsonPropertyName("badges")] public List<BadgeItem> Badges { get; set; } = new();
+    }
+
+    private class BadgeItem
+    {
+        [JsonPropertyName("offer")] public BadgeOffer? Offer { get; set; }
+        [JsonPropertyName("campaign")] public BadgeCampaignRef? Campaign { get; set; }
+        [JsonPropertyName("publication")] public BadgePublication? Publication { get; set; }
+        [JsonPropertyName("process")] public BadgeProcess? Process { get; set; }
+    }
+
+    private class BadgeOffer
+    {
+        [JsonPropertyName("id")] public string? Id { get; set; }
+    }
+
+    private class BadgeProcess
+    {
+        [JsonPropertyName("status")] public string? Status { get; set; }
+    }
+
+    private class BadgeCampaignRef
+    {
+        [JsonPropertyName("id")] public string? Id { get; set; }
+        [JsonPropertyName("name")] public string? Name { get; set; }
+    }
+
+    private class BadgePublication
+    {
+        [JsonPropertyName("to")] public string? To { get; set; }
     }
 }

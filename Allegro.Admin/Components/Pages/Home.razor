@@ -367,7 +367,8 @@
                 <div class="form-text mb-3">
                     Prices the parsed catalogue with the options above and updates <strong>price and stock</strong> on existing
                     offers. Offers are matched by their <strong>external ID = EAN</strong>. Products with no matching offer are skipped
-                    (new offers are not created).
+                    (new offers are not created). Only what actually differs is sent. Offers that are in an Allegro campaign,
+                    or waiting for one, keep their price until the campaign ends — stock is still updated.
                 </div>
 
                 <hr />

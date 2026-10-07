@@ -44,7 +44,12 @@ offers back to single units.
 Allegro's OAuth2 **device flow**, then matches each row to an existing offer by
 `external.id == EAN` — the standard way Allegro keys offers to an external
 inventory system — and updates price and stock. Products with no matching offer
-are skipped; creating new offers is deliberately out of scope.
+are skipped; creating new offers is deliberately out of scope. Only a price or stock
+that actually differs is sent. Offers in an Allegro campaign (Allegro Days and
+other badges, `GET /sale/badges`), or waiting for one, keep their price until the
+campaign ends, so a publish never knocks them out of it; stock is still updated.
+Setting campaign prices is left to whoever submits the offer. If the campaigns
+cannot be read, no price changes in that run.
 
 **5 — Report.** `TelegramNotify` speaks up when something needs a human:
 the supplier login has failed three times running, or `UnlistedTracker` has
