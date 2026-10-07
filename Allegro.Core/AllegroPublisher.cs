@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace Allegro.Core;
@@ -231,16 +232,18 @@ public class AllegroPublisher
                                    "Stock was updated as usual. Check the publish log.", log);
         }
 
+        var listedPacks = SaverExtensions.Bundles.Read();
+
         int updated = 0, unchanged = 0, frozen = 0, skipped = 0, failed = 0;
         var unlisted = new List<string>();
-        foreach (var row in listings)
+        foreach (var planned in listings)
         {
-            if (!offerIdByEan.TryGetValue(row.Ean, out var offer))
+            if (!offerIdByEan.TryGetValue(planned.Ean, out var offer))
             {
                 skipped++;
-                if (row.Count > 0)
+                if (planned.Count > 0)
                 {
-                    unlisted.Add(row.Ean);
+                    unlisted.Add(planned.Ean);
                 }
                 continue;
             }
@@ -249,6 +252,7 @@ public class AllegroPublisher
             var price = offer.Price;
             try
             {
+                var row = await MatchListedPackAsync(planned, offerId, listedPacks, options, log);
                 if (row.Count > 0)
                 {
                     var changed = false;
@@ -306,7 +310,7 @@ public class AllegroPublisher
             {
                 // One bad offer must not stop the remaining ones.
                 failed++;
-                log?.Invoke($"Failed offer {offerId} (EAN {row.Ean}): {e.Message}");
+                log?.Invoke($"Failed offer {offerId} (EAN {planned.Ean}): {e.Message}");
             }
         }
 
@@ -316,6 +320,39 @@ public class AllegroPublisher
                     $"{skipped} skipped, {failed} failed. {unlisted.Count} sellable products have no offer.");
         return updated;
     }
+
+    private async Task<ListingRow> MatchListedPackAsync(
+        ListingRow row, string offerId, Dictionary<string, int> listedPacks, ListingOptions options, Action<string>? log)
+    {
+        var listed = listedPacks.TryGetValue(row.Ean, out var known) ? known : 1;
+        if (listed == row.Pack || row.Count == 0)
+        {
+            return row;
+        }
+
+        var (status, body) = await GetRawAsync($"/sale/product-offers/{offerId}");
+        if (status is < 200 or >= 300)
+        {
+            throw new InvalidOperationException($"could not read the pack size of the offer ({status})");
+        }
+
+        var pack = JsonNode.Parse(body)?["productSet"]?.AsArray().FirstOrDefault()?["quantity"]?["value"]?.GetValue<int>() ?? 1;
+        if (pack == row.Pack)
+        {
+            return row;
+        }
+
+        log?.Invoke($"Offer {offerId} (EAN {row.Ean}) is still listed as {DescribePack(pack)}, not {DescribePack(row.Pack)} - " +
+                    "priced and stocked as listed until it is converted.");
+        return row with
+        {
+            Pack = pack,
+            Count = row.Count > 0 ? options.GetOfferStock(row.Product, pack) : 0,
+            Price = options.GetOfferPrice(row.Product, pack),
+        };
+    }
+
+    private static string DescribePack(int pack) => pack > 1 ? $"a pack of {pack}" : "single units";
 
     public record CampaignBadge(string OfferId, string CampaignId, string Name, string Status, DateTimeOffset? Until)
     {
@@ -407,9 +444,11 @@ public class AllegroPublisher
             }
 
             listings.Add(new ListingRow(
+                product,
                 product.EAN,
                 options.Includes(product) ? options.GetOfferStock(product) : 0,
-                options.GetOfferPrice(product)));
+                options.GetOfferPrice(product),
+                options.GetPackSize(product)));
         }
         return listings;
     }
@@ -717,7 +756,7 @@ public class AllegroPublisher
         }
     }
 
-    private record ListingRow(string Ean, int Count, decimal Price);
+    private record ListingRow(ProductInfo Product, string Ean, int Count, decimal Price, int Pack);
 
     private class DeviceCodeResponse
     {

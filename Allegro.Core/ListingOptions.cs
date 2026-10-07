@@ -60,18 +60,23 @@ public class ListingOptions
         return PackDefaultDivisor;
     }
 
-    public decimal GetOfferPrice(ProductInfo product)
-    {
-        var cost = product.Price * GetPackSize(product);
+    public decimal GetOfferPrice(ProductInfo product) => GetOfferPrice(product, GetPackSize(product));
 
-        var markup = IsBundle(product)
+    public decimal GetOfferPrice(ProductInfo product, int pack)
+    {
+        var cost = product.Price * pack;
+
+        var asBundle = pack == GetPackSize(product) ? IsBundle(product) : pack > 1;
+        var markup = asBundle
             ? GetMultiplier(cost, BundlePriceMultipliers, BundleDefaultMultiplier)
             : GetMultiplier(cost, PriceMultipliers, DefaultMultiplier);
 
         return Math.Round(cost * markup, 2, MidpointRounding.AwayFromZero);
     }
 
-    public int GetOfferStock(ProductInfo product) => product.Count / GetPackSize(product);
+    public int GetOfferStock(ProductInfo product) => GetOfferStock(product, GetPackSize(product));
+
+    public int GetOfferStock(ProductInfo product, int pack) => product.Count / Math.Max(pack, 1);
 
     private static decimal GetMultiplier(decimal price, List<PriceTier> tiers, decimal fallback)
     {
