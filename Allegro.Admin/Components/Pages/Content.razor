@@ -1,0 +1,313 @@
+@page "/content"
+@using Microsoft.AspNetCore.Authorization
+@implements IDisposable
+@inject ToastService toastService
+@inject AllegroPublishService allegro
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+<PageTitle>Titles & descriptions · Allegro parser</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <h1 class="mb-0">Titles & descriptions</h1>
+    <div class="d-flex align-items-center flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" href="/">← Back to dashboard</a>
+        <form action="/auth/logout" method="post" class="m-0">
+            <button class="btn btn-outline-danger" type="submit">Logout</button>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="d-flex flex-wrap gap-2 align-items-end mb-2">
+            <div>
+                <label class="form-label" for="generateCount">Offers to generate</label>
+                <input id="generateCount" class="form-control" type="number" min="1" max="500" style="width: 120px" @bind="_count" />
+            </div>
+            <button class="btn btn-primary" disabled="@(!allegro.Settings.IsConnected || Busy)" @onclick="Generate">
+                @(allegro.IsGenerating ? "Generating..." : $"Generate for {_count} weakest titles")
+            </button>
+        </div>
+        <div class="form-text">
+            Picks active offers whose titles look weakest — supplier codes such as XJ4171, all caps, too short — and
+            that have no draft yet, then writes a new title and description from the offer and its Allegro catalogue
+            card. Nothing changes on Allegro until you press <strong>Apply</strong>. Expect several seconds per offer;
+            four run at a time, and you can leave this page while it works. Text is written by Claude through the
+            Anthropic API: the key and model are read from the <code>Ai</code> section of <code>coresettings.json</code>
+            (<code>ApiKey</code>, <code>Model</code>, default <code>claude-haiku-5-5</code>).
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="btn-group btn-group-sm" role="group" aria-label="Draft status">
+            @foreach (var status in Enum.GetValues<ContentDraftStatus>())
+            {
+                <button class="btn @(_filter == status ? "btn-secondary" : "btn-outline-secondary")" @onclick="() => SetFilter(status)">
+                    @Label(status) (@_drafts.Count(d => d.Status == status))
+                </button>
+            }
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            @if (_filter == ContentDraftStatus.Generated)
+            {
+                <button class="btn btn-sm btn-success" disabled="@(Busy || _selected.Count == 0)" @onclick="Apply">
+                    @(allegro.IsPublishing ? "Applying..." : $"Apply {_selected.Count} to Allegro")
+                </button>
+                <button class="btn btn-sm btn-outline-danger" disabled="@(Busy || _selected.Count == 0)" @onclick="Reject">Reject</button>
+            }
+            @if (_filter == ContentDraftStatus.Rejected)
+            {
+                <button class="btn btn-sm btn-outline-secondary" disabled="@(Busy || _selected.Count == 0)" @onclick="Restore">Back to review</button>
+            }
+            <button class="btn btn-sm btn-outline-primary" disabled="@(Busy || _selected.Count == 0)" @onclick="Regenerate">Regenerate</button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        @if (Visible.Count == 0)
+        {
+            <div class="p-3 text-muted">No @Label(_filter).ToLowerInvariant() drafts.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 2rem">
+                                <input class="form-check-input" type="checkbox" aria-label="Select all"
+                                       checked="@(Visible.All(d => _selected.Contains(d.Ean)))" @onchange="ToggleAll" />
+                            </th>
+                            <th>Offer</th>
+                            <th>Current title → new title</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var draft in Visible)
+                        {
+                            <tr class="@(draft.Warning is not null ? "table-warning" : "")">
+                                <td>
+                                    <input class="form-check-input" type="checkbox" aria-label="Select @draft.Ean"
+                                           checked="@_selected.Contains(draft.Ean)" @onchange="e => Toggle(draft.Ean, e)" />
+                                </td>
+                                <td class="small text-nowrap">
+                                    <code>@draft.Ean</code><br />
+                                    <a href="https://allegro.pl/oferta/@draft.OfferId" target="_blank">@draft.OfferId</a>
+                                    @if (draft.Pack > 1)
+                                    {
+                                        <br /><span class="badge bg-secondary">pack @draft.Pack</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="small text-muted text-decoration-line-through">@draft.OldName</div>
+                                    <div class="fw-semibold">@draft.Name <span class="small text-muted fw-normal">@draft.Name.Length/75</span></div>
+                                    @if (draft.Warning is not null)
+                                    {
+                                        <div class="small text-danger mt-1">@draft.Warning</div>
+                                    }
+                                    @if (draft.Error is not null)
+                                    {
+                                        <div class="small text-danger mt-1">Last apply failed: @draft.Error</div>
+                                    }
+                                    @if (_open.Contains(draft.Ean))
+                                    {
+                                        <div class="border rounded p-3 mt-2 small allegro-preview">@((MarkupString)draft.Description)</div>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-link" @onclick="() => TogglePreview(draft.Ean)">
+                                        @(_open.Contains(draft.Ean) ? "Hide" : "Description")
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="form-text mb-2">
+    Drafts flagged in yellow are never selected for you: their data disagrees, so check the offer first. Applying
+    re-reads the offer and refuses if its title or pack size changed since generation. The new text goes on top of
+    the description and the offer's existing photos stay below it. Photos in the gallery are not touched.
+</div>
+
+<pre class="bg-dark text-light p-3 rounded mb-0" style="max-height: 240px; overflow-y: auto; font-size: 0.8rem; white-space: pre-wrap;">@(allegro.Logs.Count == 0 ? "No activity yet." : string.Join("\n", allegro.Logs))</pre>
+
+@code {
+    private int _count = 20;
+    private ContentDraftStatus _filter = ContentDraftStatus.Generated;
+    private List<ContentDraft> _drafts = new();
+    private readonly HashSet<string> _selected = new();
+    private readonly HashSet<string> _open = new();
+    private Timer? _refresh;
+    private bool _wasBusy;
+
+    private bool Busy => allegro.IsGenerating || allegro.IsPublishing;
+
+    private List<ContentDraft> Visible => _drafts
+        .Where(d => d.Status == _filter)
+        .OrderBy(d => d.Warning is null)
+        .ThenByDescending(d => d.GeneratedAt)
+        .ToList();
+
+    protected override void OnInitialized()
+    {
+        Reload();
+        SetFilter(_filter);
+        _refresh = new Timer(_ => InvokeAsync(() =>
+        {
+            if (Busy || _wasBusy)
+            {
+                Reload();
+            }
+            _wasBusy = Busy;
+            StateHasChanged();
+        }), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+    }
+
+    public void Dispose() => _refresh?.Dispose();
+
+    private void Reload()
+    {
+        _drafts = allegro.ContentDrafts.ToList();
+        var known = _drafts.Where(d => d.Status == _filter).Select(d => d.Ean).ToHashSet();
+        _selected.IntersectWith(known);
+    }
+
+    private static string Label(ContentDraftStatus status) => status switch
+    {
+        ContentDraftStatus.Generated => "To review",
+        ContentDraftStatus.Applied => "Applied",
+        ContentDraftStatus.Rejected => "Rejected",
+        ContentDraftStatus.Outdated => "Outdated",
+        _ => status.ToString(),
+    };
+
+    private void SetFilter(ContentDraftStatus status)
+    {
+        _filter = status;
+        _selected.Clear();
+        if (status == ContentDraftStatus.Generated)
+        {
+            _selected.UnionWith(Visible.Where(d => d.Warning is null).Select(d => d.Ean));
+        }
+    }
+
+    private void Toggle(string ean, ChangeEventArgs e)
+    {
+        if (e.Value is true)
+        {
+            _selected.Add(ean);
+        }
+        else
+        {
+            _selected.Remove(ean);
+        }
+    }
+
+    private void ToggleAll(ChangeEventArgs e)
+    {
+        if (e.Value is true)
+        {
+            _selected.UnionWith(Visible.Select(d => d.Ean));
+        }
+        else
+        {
+            _selected.Clear();
+        }
+    }
+
+    private void TogglePreview(string ean)
+    {
+        if (!_open.Remove(ean))
+        {
+            _open.Add(ean);
+        }
+    }
+
+    private async Task Generate()
+    {
+        try
+        {
+            var task = allegro.GenerateContentAsync(Math.Clamp(_count, 1, 500));
+            toastService.ShowInfo("Generation started. Drafts appear below as they are ready.");
+            var made = await task;
+            toastService.ShowSuccess($"{made} draft(s) ready for review.");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            Reload();
+            SetFilter(ContentDraftStatus.Generated);
+        }
+    }
+
+    private async Task Regenerate()
+    {
+        var eans = _selected.ToList();
+        try
+        {
+            var made = await allegro.RegenerateContentAsync(eans);
+            toastService.ShowSuccess($"{made} draft(s) regenerated and back in review.");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            Reload();
+            SetFilter(ContentDraftStatus.Generated);
+        }
+    }
+
+    private async Task Apply()
+    {
+        try
+        {
+            var result = await allegro.ApplyContentAsync(_selected.ToList());
+            if (result.Failed > 0)
+            {
+                toastService.ShowError($"{result.Applied} applied, {result.Failed} failed - the reason is shown on each row.");
+            }
+            else
+            {
+                toastService.ShowSuccess($"{result.Applied} offer(s) updated on Allegro.");
+            }
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            Reload();
+            SetFilter(_filter);
+        }
+    }
+
+    private void Reject()
+    {
+        allegro.SetContentStatus(_selected, ContentDraftStatus.Rejected);
+        toastService.ShowInfo($"{_selected.Count} draft(s) rejected.");
+        Reload();
+        SetFilter(_filter);
+    }
+
+    private void Restore()
+    {
+        allegro.SetContentStatus(_selected, ContentDraftStatus.Generated);
+        toastService.ShowInfo($"{_selected.Count} draft(s) back in review.");
+        Reload();
+        SetFilter(_filter);
+    }
+}

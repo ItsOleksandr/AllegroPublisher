@@ -27,6 +27,7 @@ public sealed class BundleConverter
         int converted = 0, failed = 0, skipped = 0;
         var reasons = new Dictionary<string, int>();
         var registry = SaverExtensions.Bundles.Read();
+        var drafts = SaverExtensions.ContentDrafts.Read();
         foreach (var change in todo)
         {
             try
@@ -39,6 +40,12 @@ public sealed class BundleConverter
                 else if (outcome.Value)
                 {
                     converted++;
+                    if (drafts.TryGetValue(change.Ean, out var draft) && draft.Status == ContentDraftStatus.Applied
+                                                                      && draft.Pack != change.PackSize)
+                    {
+                        draft.Status = ContentDraftStatus.Outdated;
+                        log?.Invoke($"  {change.Ean}: its generated description was written for {draft.Pack} - regenerate it.");
+                    }
                 }
                 else
                 {
@@ -55,6 +62,8 @@ public sealed class BundleConverter
 
         SaverExtensions.Bundles.Value = registry;
         SaverExtensions.Bundles.Write();
+        SaverExtensions.ContentDrafts.Value = drafts;
+        SaverExtensions.ContentDrafts.Write();
 
         log?.Invoke("");
         log?.Invoke($"Done: {converted} converted, {skipped} skipped, {failed} failed. " +

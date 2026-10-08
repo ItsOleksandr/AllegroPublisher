@@ -77,6 +77,64 @@ public class AllegroPublishService
         }
     }
 
+    public bool IsGenerating { get; private set; }
+
+    public IReadOnlyCollection<ContentDraft> ContentDrafts => SaverExtensions.ContentDrafts.Read().Values;
+
+    public async Task<int> GenerateContentAsync(int count)
+    {
+        return await RunGenerationAsync(async generator =>
+            await generator.GenerateAsync(await generator.PickWeakestAsync(count, Log), Log));
+    }
+
+    public async Task<int> RegenerateContentAsync(IEnumerable<string> eans)
+    {
+        var wanted = eans.ToHashSet();
+        var offers = ContentDrafts.Where(d => wanted.Contains(d.Ean))
+            .Select(d => new ContentGenerator.Candidate(d.OfferId, d.Ean, d.OldName, 0m, 0))
+            .ToList();
+        return await RunGenerationAsync(generator => generator.GenerateAsync(offers, Log));
+    }
+
+    private async Task<int> RunGenerationAsync(Func<ContentGenerator, Task<int>> run)
+    {
+        if (IsGenerating || IsPublishing)
+        {
+            throw new InvalidOperationException("Another job is already running.");
+        }
+
+        IsGenerating = true;
+        try
+        {
+            return await run(new ContentGenerator(_publisher));
+        }
+        finally
+        {
+            IsGenerating = false;
+        }
+    }
+
+    public async Task<ContentApplier.Result> ApplyContentAsync(IEnumerable<string> eans)
+    {
+        if (IsGenerating || IsPublishing)
+        {
+            throw new InvalidOperationException("Another job is already running.");
+        }
+
+        IsPublishing = true;
+        try
+        {
+            return await new ContentApplier(_publisher).ApplyAsync(eans, Log);
+        }
+        finally
+        {
+            IsPublishing = false;
+        }
+    }
+
+    public void SetContentStatus(IEnumerable<string> eans, ContentDraftStatus status) =>
+        ContentApplier.SetStatus(eans, status);
+
     public Task<List<OfferCreator.Candidate>> PlanNewOffersAsync() =>
         new OfferCreator(_publisher).PlanAsync(Log);
 

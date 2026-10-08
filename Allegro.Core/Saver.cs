@@ -67,4 +67,5 @@ public static class SaverExtensions
     public static readonly Saver<ParseResponse> LastParse = new Saver<ParseResponse>("last_parse.txt");
     public static readonly Saver<AllegroSettings> AllegroSettings = new Saver<AllegroSettings>("allegro_settings.txt");
     public static readonly Saver<Dictionary<string, int>> Bundles = new Saver<Dictionary<string, int>>("bundles.txt");
+    public static readonly Saver<Dictionary<string, ContentDraft>> ContentDrafts = new Saver<Dictionary<string, ContentDraft>>("content_drafts.txt");
 }

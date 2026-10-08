@@ -84,7 +84,8 @@ public class ProductExtracter
             {
                 Price = decimal.Parse(price, CultureInfo.InvariantCulture), Name = name, Count = int.Parse(countString),
                 EAN = ean, CategoriesUrls = categoriesUrl.ToArray(), Url = url,
-                MinOrderQuantity = int.Parse(minOrderCount), LastUpdate = DateTime.Now
+                MinOrderQuantity = int.Parse(minOrderCount), LastUpdate = DateTime.Now,
+                Description = await ReadDescriptionAsync()
             };
         }
         catch (InvalidProductException)
@@ -95,6 +96,25 @@ public class ProductExtracter
         {
             System.Console.WriteLine(e);
             throw new ProductAlreadyHandledException();
+        }
+    }
+
+    private async Task<string> ReadDescriptionAsync()
+    {
+        try
+        {
+            var panel = _page.Locator("#tab-description");
+            if (await panel.CountAsync() == 0)
+            {
+                return "";
+            }
+
+            return SupplierDescription.Clean(
+                await panel.First.EvaluateAsync<string>("e => e.innerText || e.textContent || ''"));
+        }
+        catch (Exception)
+        {
+            return "";
         }
     }
 

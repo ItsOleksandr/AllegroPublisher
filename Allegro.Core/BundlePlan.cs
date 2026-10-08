@@ -11,6 +11,7 @@ public sealed class BundlePlan
 
     private readonly AllegroPublisher _publisher;
     private Dictionary<string, int> _listedPacks = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, ContentDraft> _drafts = new(StringComparer.OrdinalIgnoreCase);
 
     public BundlePlan(AllegroPublisher publisher)
     {
@@ -49,6 +50,7 @@ public sealed class BundlePlan
                             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         _listedPacks = new Dictionary<string, int>(SaverExtensions.Bundles.Read(), StringComparer.OrdinalIgnoreCase);
+        _drafts = new Dictionary<string, ContentDraft>(SaverExtensions.ContentDrafts.Read(), StringComparer.OrdinalIgnoreCase);
 
         var reverts = _listedPacks
             .Where(entry => !qualified.Contains(entry.Key) && byEan.ContainsKey(entry.Key))
@@ -84,7 +86,11 @@ public sealed class BundlePlan
         var pack = options.GetPackSize(product);
         var packPrice = options.GetOfferPrice(product);
         var newStock = options.GetOfferStock(product);
-        var newName = BuildName(product.Name, pack);
+        var newName = BuildName(
+            _drafts.TryGetValue(product.EAN, out var draft) && draft.Status == ContentDraftStatus.Applied
+                ? draft.BaseName
+                : product.Name,
+            pack);
 
         var listedPack = offer is not null && _listedPacks.TryGetValue(product.EAN, out var known) ? known : 0;
 
