@@ -34,12 +34,14 @@ public class ProductExtracter
         }
 
         await LogIn(url);
-        
+
 
         try
         {
+            if (await _page.Locator("section.ct-no-results").IsVisibleAsync()) throw new InvalidProductException("Deleted product");
+
             var name = (await _page.Locator("h1.product_title.entry-title").InnerTextAsync()).Trim();
-            var ean = (await _page.Locator("span.ean").InnerTextAsync()).Trim();
+            var ean = (await  _page.Locator("span.ean").InnerTextAsync()).Trim();
 
             var notAvailableTask = _page.Locator("form.ct-product-waitlist-form").First
                 .WaitForAsync(new LocatorWaitForOptions() { Timeout = 5000 });
@@ -55,7 +57,8 @@ public class ProductExtracter
                 var countRaw = await countRawTask;
                 countString = Regex.Match(countRaw.Trim(), @"\d+").Value;
                 minOrderCount = await _page.Locator("div.quantity input").First.GetAttributeAsync("value") ?? "0";
-                price = await _page.Locator("meta[property='product:price:amount']").GetAttributeAsync("content") ?? "-1";
+                price = await _page.Locator("meta[property='product:price:amount']").GetAttributeAsync("content") ??
+                        "-1";
             }
             else if (first == notAvailableTask)
             {
@@ -66,7 +69,7 @@ public class ProductExtracter
                 throw new ParseProductException("No exist count product and form");
             }
 
-            
+
             var categoriesLocator = await _page.Locator("span.posted_in a").AllAsync();
 
             var categoriesUrl = new List<string>();
@@ -76,11 +79,12 @@ public class ProductExtracter
                 if (href == null) continue;
                 categoriesUrl.Add(href);
             }
-            
+
             return new ProductInfo
             {
                 Price = decimal.Parse(price, CultureInfo.InvariantCulture), Name = name, Count = int.Parse(countString),
-                EAN = ean, CategoriesUrls = categoriesUrl.ToArray(), Url = url,MinOrderQuantity = int.Parse(minOrderCount),LastUpdate = DateTime.Now
+                EAN = ean, CategoriesUrls = categoriesUrl.ToArray(), Url = url,
+                MinOrderQuantity = int.Parse(minOrderCount), LastUpdate = DateTime.Now
             };
         }
         catch (InvalidProductException)

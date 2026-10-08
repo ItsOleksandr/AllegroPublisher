@@ -217,7 +217,22 @@ public class AllegroPublisher
         await EnsureValidTokenAsync();
 
         var options = SaverExtensions.ListingOptions.Read();
-        var listings = BuildListings(SaverExtensions.Products.Read().Values, options);
+        var products = SaverExtensions.Products.Read().Values.Where(p => !string.IsNullOrWhiteSpace(p.EAN)).ToList();
+        var stale = products.Where(options.IsStale).Select(p => p.Url).ToHashSet();
+        if (stale.Count > 0 && stale.Count * 2 > products.Count)
+        {
+            log?.Invoke($"{stale.Count} of {products.Count} products were not refreshed for {options.StaleAfterHours} hours - " +
+                        "the parser looks broken, so their stock is published as last seen.");
+            await NotifyAdminAsync($"#AllegroApp {stale.Count} of {products.Count} products were not refreshed for " +
+                                   $"{options.StaleAfterHours} hours. The parser looks broken - check it.", log);
+            stale.Clear();
+        }
+        else if (stale.Count > 0)
+        {
+            log?.Invoke($"{stale.Count} products were not refreshed for {options.StaleAfterHours} hours - treated as out of stock.");
+        }
+
+        var listings = BuildListings(products, options, stale);
         log?.Invoke($"{listings.Count} products with an EAN, {listings.Count(r => r.Count > 0)} of them sellable.");
         if (listings.Count == 0)
         {
@@ -433,7 +448,7 @@ public class AllegroPublisher
         }
     }
 
-    private static List<ListingRow> BuildListings(IEnumerable<ProductInfo> products, ListingOptions options)
+    private static List<ListingRow> BuildListings(IEnumerable<ProductInfo> products, ListingOptions options, HashSet<string> stale)
     {
         var listings = new List<ListingRow>();
         foreach (var product in products)
@@ -446,7 +461,7 @@ public class AllegroPublisher
             listings.Add(new ListingRow(
                 product,
                 product.EAN,
-                options.Includes(product) ? options.GetOfferStock(product) : 0,
+                options.Includes(product) && !stale.Contains(product.Url) ? options.GetOfferStock(product) : 0,
                 options.GetOfferPrice(product),
                 options.GetPackSize(product)));
         }

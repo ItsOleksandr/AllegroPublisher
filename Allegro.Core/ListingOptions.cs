@@ -5,6 +5,7 @@ public class ListingOptions
     public int MinimalProductCount { get; set; } = 10;
     public decimal MinimalPrice { get; set; } = 0m;
     public int BundleFromQuantity { get; set; } = 5;
+    public int StaleAfterHours { get; set; } = 48;
     public List<PackTier> PackDivisors { get; set; } = new()
     {
         new PackTier { MaxMinOrder = 10, Divisor = 1 },
@@ -32,6 +33,9 @@ public class ListingOptions
         && product.Price >= MinimalPrice
         && product.Count >= MinimalProductCount
         && GetOfferStock(product) >= 1;
+
+    public bool IsStale(ProductInfo product) =>
+        StaleAfterHours > 0 && product.LastUpdate < DateTime.Now.AddHours(-StaleAfterHours);
 
     public bool IsBundle(ProductInfo product) =>
         BundleFromQuantity > 0 && product.MinOrderQuantity > BundleFromQuantity;

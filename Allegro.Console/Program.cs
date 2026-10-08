@@ -72,6 +72,14 @@ foreach (var product in responseParsing.Products.Values)
 {
     SaverExtensions.Products.Value[product.Url] = product;
 }
+foreach (var url in responseParsing.BlackListUrls)
+{
+    if (SaverExtensions.Products.Value.TryGetValue(url, out var removed))
+    {
+        removed.Count = 0;
+        removed.LastUpdate = DateTime.Now;
+    }
+}
 SaverExtensions.Products.Write();
 
 var publisher = new AllegroPublisher();

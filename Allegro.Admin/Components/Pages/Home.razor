@@ -97,6 +97,14 @@
                         </div>
                     </div>
                     <div class="col-6">
+                        <label class="form-label" for="staleAfterInput">Out of stock if not refreshed for (hours)</label>
+                        <input id="staleAfterInput" class="form-control" type="number" min="0" @bind="_listingOptions.StaleAfterHours" />
+                        <div class="form-text">
+                            A product the parser has not refreshed for this long is published with zero stock, so its offer
+                            ends. Products deleted on the supplier's site go to zero straight away. If more than half the
+                            catalogue is this old, the parser is assumed broken: stock is left alone and Telegram is told.
+                            0 = off.
+                        </div>
                     </div>
                 </div>
                 

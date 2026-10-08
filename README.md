@@ -49,7 +49,11 @@ that actually differs is sent. Offers in an Allegro campaign (Allegro Days and
 other badges, `GET /sale/badges`), or waiting for one, keep their price until the
 campaign ends, so a publish never knocks them out of it; stock is still updated.
 Setting campaign prices is left to whoever submits the offer. If the campaigns
-cannot be read, no price changes in that run.
+cannot be read, no price changes in that run. A product the supplier has deleted is set to zero stock,
+so its offer ends; any product the parser has not refreshed for
+`StaleAfterHours` (48 by default) is published with zero stock too, unless more
+than half the catalogue is that old — then the parser is assumed broken, stock is
+left alone and Telegram is told.
 
 **5 — Report.** `TelegramNotify` speaks up when something needs a human:
 the supplier login has failed three times running, or `UnlistedTracker` has
