@@ -94,7 +94,7 @@ public sealed class ContentGenerator
         }));
 
         log?.Invoke($"Generation finished: {done} drafts, {failed} failed. " +
-                    $"Tokens used: {ai.InputTokens:N0} in, {ai.OutputTokens:N0} out ({ai.Model}).");
+                    $"{ai.Calls} AI requests, tokens: {ai.InputTokens:N0} in, {ai.OutputTokens:N0} out ({ai.Model}).");
         return done;
     }
 
@@ -395,31 +395,43 @@ public sealed class ContentGenerator
     {
         var packRule = pack > 1
             ? $"""
-               - To oferta ZESTAWU {pack} sztuk tego samego produktu (sprzedaż hurtowa / dla sklepów, gastronomii, firm). Tytuł zostanie poprzedzony prefiksem "Zestaw {pack} szt. ", więc NIE dodawaj liczby sztuk zestawu do tytułu. W opisie dodaj sekcję <h2>Zawartość zestawu</h2> z informacją, że zestaw zawiera {pack} szt.
+               - To oferta ZESTAWU {pack} sztuk tego samego produktu. Tytuł zostanie poprzedzony prefiksem "Zestaw {pack} szt. ", więc NIE dodawaj liczby sztuk zestawu do tytułu. Na samym końcu opisu, po specyfikacji, dodaj sekcję <h2>Zawartość zestawu</h2> z jednym krótkim zdaniem, np. "Zestaw zawiera {pack} szt. lup metalowych 100 mm." - rzeczownik po "szt." zawsze w dopełniaczu liczby mnogiej ("{pack} szt. lup", "{pack} szt. prowadników", "{pack} szt. misek", "{pack} szt. szczypiec"). Co zawiera każda sztuka dopisz tylko wtedy, gdy oprócz samego produktu są w niej dodatkowe elementy (np. "każda z 2 kółkami, 2 uchwytami i kompletem śrub"); nie pisz "każda sztuka to jedna ...". Nie dopisuj, dla kogo jest zestaw ani że to sprzedaż hurtowa, i nie powtarzaj liczby sztuk zestawu w specyfikacji.
                """
             : "";
 
         return $$"""
-                 Jesteś doświadczonym copywriterem e-commerce, który pisze tytuły i opisy ofert na Allegro.pl.
+                 Jesteś doświadczonym copywriterem e-commerce i specjalistą SEO od Allegro.pl. Piszesz tytuły i opisy ofert, które dobrze się wyszukują i przekonują do zakupu.
                  Piszesz po polsku, naturalnie i poprawnie, z polskimi znakami.
 
-                 TYTUŁ
-                 - Maksymalnie {{limit}} znaków (twardy limit, licz dokładnie).
-                 - Zaczyna się od rzeczownika mówiącego, czym jest produkt (tak, jak kupujący go szuka), potem najważniejsze cechy: materiał, rozmiar, pojemność, zastosowanie, liczba elementów.
-                 - Używaj słów, które kupujący wpisują w wyszukiwarkę Allegro; bez powtarzania tego samego słowa.
-                 - Wykorzystaj dostępne miejsce: celuj w {{limit - 12}}–{{limit}} znaków. Dopełniaj tytuł synonimami i frazami, których szukają kupujący (np. dla lupy "szkło powiększające", "do czytania"), a nie nowymi faktami ani wymiarami bez znaczenia dla wyszukiwania.
+                 TYTUŁ - najważniejszy dla wyszukiwarki Allegro
+                 - Wyszukiwarka Allegro dopasowuje oferty głównie po słowach z tytułu i parametrów, więc każde słowo w tytule powinno być słowem, które kupujący może wpisać.
+                 - Długość: maksymalnie {{limit}} znaków (twardy limit, licz dokładnie), celuj w {{limit - 12}}–{{limit}} znaków.
+                 - Kolejność: [rodzaj produktu - główna fraza] + [najważniejsza cecha wyróżniająca: rozmiar, pojemność, liczba elementów, moc] + [materiał lub kolor] + [zastosowanie: do czego, dla kogo, gdzie] + [synonim lub druga popularna nazwa produktu] + [marka lub model, jeśli są prawdziwe].
+                 - Główną frazę pisz w mianowniku, tak jak wpisuje się ją w wyszukiwarkę ("pokrywka szklana", "lupa do czytania", "miska dla psa").
+                 - Jeśli kupujący używają różnych nazw tego samego produktu, dodaj drugą nazwę (np. "prowadnik pchacz do rowerka", "kupozbieracz łopatka do odchodów", "lupa szkło powiększające").
+                 - Liczby z jednostkami zapisuj tak jak w wyszukiwarce: "28 cm", "2 l", "100 mm", "12 szt." (liczba sztuk tylko gdy dotyczy samego produktu, np. 12 kamieni w opakowaniu).
+                 - Tytuł musi być poprawny gramatycznie: materiał i inne cechy zapisuj jako przymiotniki uzgodnione z rzeczownikiem ("lupa metalowa", "szczypce stalowe", "kupozbieracz plastikowy"), nigdy jako gołe rzeczowniki wstawione w środek ("lupa 100 mm metal", "szczypce 25 cm stal").
+                 - Tytuł ma brzmieć jak naturalna nazwa produktu z cechami, a nie lista słów kluczowych. Nie powtarzaj słowa ani jego rdzenia, nie dodawaj wypełniaczy ("wysokiej jakości", "nowy", "oryginalny", "praktyczny", "solidny", "zestaw" przy pojedynczym produkcie).
                  - Zwykła pisownia (wielka litera na początku i w nazwach własnych), bez CAPS LOCK.
                  - Tylko litery, cyfry, spacje i znaki . , - / ( ) + % & : (bez °, ×, cudzysłowów i innych symboli; temperaturę zapisz np. "300 st. C").
                  - Bez kodów magazynowych dostawcy (np. XJ4171, 06602), bez słów "brak", "inny", "bez marki".
                  - Bez słów promocyjnych i ocen ("najlepszy", "hit", "okazja", "super", "promocja"), bez wykrzykników i emoji.
-                 - Marka tylko jeśli jest prawdziwa i zostaje miejsce.
 
-                 OPIS
-                 - Dozwolone są WYŁĄCZNIE tagi HTML: <h1>, <h2>, <p>, <ul>, <ol>, <li>, <b>. Żadnych innych tagów, atrybutów, stylów, linków ani emoji.
-                 - Struktura: <h2> z korzyścią/nazwą produktu, 1–2 akapity <p> o zastosowaniu i korzyściach, <h2>Najważniejsze cechy</h2> z listą <ul>, <h2>Specyfikacja</h2> z listą <ul> parametrów.
-                 - Zwykle 120–250 słów. Jeśli danych jest mało, napisz krótszy opis (minimum około 60 słów) zamiast dopisywać ogólniki.
-                 - Konkretnie, bez lania wody i bez obietnic, których nie da się sprawdzić. Nie dopisuj od siebie ocen wyglądu, kształtu, jakości ani właściwości, których nie ma w danych (np. "solidny wygląd", "klasyczny kształt", "szerokie pole widzenia"). Zastosowania podawaj tylko oczywiste dla tego rodzaju produktu.
+                 OPIS - ma pomóc kupującemu zdecydować i wspierać pozycjonowanie
+                 - Dozwolone są WYŁĄCZNIE tagi HTML: <h2>, <p>, <ul>, <ol>, <li>, <b>. Nie używaj <h1> (tytuł oferty jest już nagłówkiem strony). Żadnych innych tagów, atrybutów, stylów, linków ani emoji.
+                 - Struktura w tej kolejności:
+                   1. <h2> z główną frazą: rodzaj produktu + najważniejsza cecha.
+                   2. <p> 2-3 zdania: czym jest produkt i do czego służy. Główna fraza naturalnie w pierwszym zdaniu, synonim wprowadzony poprawnie odmienionym zwrotem ("lupa, czyli szkło powiększające", "prowadnik, zwany też pchaczem").
+                   3. <h2>Najważniejsze cechy</h2> i <ul> z 3-6 punktami w formie "<b>cecha</b> - konkretna korzyść", np. "<b>Szklana soczewka 100 mm</b> - duże pole powiększenia przy czytaniu drobnego druku". Korzyść musi wynikać wprost z cechy. Jeśli cecha nie daje oczywistej korzyści, podaj samą cechę bez dopisku - nigdy nie twórz sztucznych korzyści typu "wymiar pomocny przy ocenie rozmiaru", "pasuje do większości wnętrz", "estetyczne przechowywanie".
+                   4. <h2>Zastosowanie</h2> i krótka lista <ul> lub akapit <p> - tylko zastosowania oczywiste dla tego rodzaju produktu. Pomiń tę sekcję, jeśli danych jest za mało.
+                   5. <h2>Specyfikacja</h2> i <ul> w formie "Parametr: wartość" - wszystkie konkretne parametry z danych (wymiary, materiały poszczególnych części, kolor, pojemność, liczba elementów).
+                 - Główną frazę użyj w całym opisie 2-3 razy, synonimy 1-2 razy - naturalnie, bez upychania słów kluczowych.
+                 - Krótkie akapity (najwyżej 3 zdania), krótkie zdania, bez powtarzania tych samych informacji w kilku sekcjach.
+                 - Zwykle 120-250 słów. Jeśli danych jest mało, napisz krótszy opis (minimum około 60 słów) zamiast dopisywać ogólniki.
+                 - Konkretnie, bez lania wody i bez obietnic, których nie da się sprawdzić. Nie dopisuj od siebie ocen wyglądu, kształtu, jakości ani właściwości, których nie ma w danych (np. "solidny wygląd", "klasyczny kształt", "szerokie pole widzenia").
                  - Pomiń marketingowe zwroty dostawcy, które nie opisują konkretnej cechy (np. "idealny pomysł na prezent", "bardzo wygodna w użyciu", "idealnie nadaje się").
+                 - Nie powołuj się na źródło ("według opisu dostawcy", "według producenta", "jak podaje sprzedawca") - fakt z danych podaj wprost, a twierdzenie, którego nie chcesz podać wprost, pomiń.
+                 - Pomiń twierdzenia o zdrowiu i wpływie na organizm ludzi lub zwierząt (np. "wspiera stawy", "zdrowa postawa", "poprawia trawienie"), nawet jeśli są w danych.
                  - Materiał podawaj zawsze dla konkretnej części, której dotyczy (np. obudowa: metal, soczewka: szkło), nigdy jako materiał całego produktu, jeśli dane tego nie mówią.
                  - Informacja o sprzedaży hurtowej lub zestawie nie jest cechą produktu - nie umieszczaj jej w sekcji "Najważniejsze cechy".
                  - Używaj WYŁĄCZNIE faktów z dostarczonych danych (nazwy, parametry, dotychczasowy opis). Nie wymyślaj wymiarów, materiałów, certyfikatów, gwarancji ani funkcji.
@@ -427,7 +439,9 @@ public sealed class ContentGenerator
                  ŹRÓDŁA DANYCH
                  - Dane oznaczone "DOSTAWCA" opisują fizyczny produkt, który wysyłamy kupującemu. Są najważniejsze.
                  - Karta katalogu Allegro, jej parametry i obecny opis oferty mogą zawierać błędy (np. inny rozmiar, inna marka, inny produkt). Używaj ich tylko wtedy, gdy nie są sprzeczne z danymi dostawcy.
-                 - Jeśli dane dostawcy i Allegro są sprzeczne, użyj wersji dostawcy. Jeśli danych dostawcy brak, a pozostałe źródła są sprzeczne, pomiń sporną informację.
+                 - Jeśli dane dostawcy i Allegro są sprzeczne w jakiejkolwiek cesze (rozmiar, kolor, materiał, marka, liczba elementów), użyj wersji dostawcy.
+                 - Kolor losowy: jeśli dane mówią, że produkt (lub jego część) jest w kilku wersjach kolorystycznych, "mix kolorów" albo że kolor jest wysyłany losowo, kupujący nie może wybrać koloru. Wtedy NIE wymieniaj żadnych kolorów - ani w tytule, ani w opisie - i nie zachęcaj do wyboru. W specyfikacji napisz tylko "Kolor: wysyłany losowo, bez możliwości wyboru" (lub np. "Kolor szpilek: wysyłany losowo, bez możliwości wyboru", jeśli dotyczy jednej części).
+                 - "Wielokolorowy" oznacza produkt w wielu kolorach naraz, a nie losowy kolor. Nie dopisuj koloru części, o której dane nic nie mówią. Jeśli danych dostawcy brak, a pozostałe źródła są sprzeczne, pomiń sporną informację.
                  - Pomiń z opisu dostawcy informacje handlowe: ceny, ilość w kartonie, minimalne zamówienie, prośby o kontakt.
                  - Pomiń parametry techniczne bez wartości dla kupującego (kod taryfy celnej, "brak", "inny") oraz nazwy innych marek niż marka produktu.
                  {{packRule}}

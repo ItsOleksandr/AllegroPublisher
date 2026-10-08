@@ -138,6 +138,24 @@ public class AllegroPublishService
     public Task<List<OfferCreator.Candidate>> PlanNewOffersAsync() =>
         new OfferCreator(_publisher).PlanAsync(Log);
 
+    public async Task<OfferCreator.Result> CreateOffersAsync(IEnumerable<OfferCreator.Candidate> candidates)
+    {
+        if (IsGenerating || IsPublishing)
+        {
+            throw new InvalidOperationException("Another job is already running.");
+        }
+
+        IsPublishing = true;
+        try
+        {
+            return await new OfferCreator(_publisher).CreateAsync(candidates, Log);
+        }
+        finally
+        {
+            IsPublishing = false;
+        }
+    }
+
     public async Task<int> PublishAsync()
     {
         if (IsPublishing)

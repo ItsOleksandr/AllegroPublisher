@@ -455,7 +455,7 @@
                     </span>
                     <span class="text-muted small">@_unlistedTotal without an offer in total</span>
                     <button class="btn btn-outline-secondary" disabled="@(_unlistedNew == 0)" @onclick="MarkImported">
-                        Mark as imported
+                        Mark all as seen
                     </button>
                     <button class="btn btn-outline-secondary" disabled="@(!allegro.Settings.IsConnected || _isScanningUnlisted)" @onclick="ScanUnlisted">
                         @(_isScanningUnlisted ? "Scanning..." : "Scan unlisted products")
@@ -464,20 +464,102 @@
                 <div class="form-text mb-2">
                     Publishing only ever updates offers that already exist, so a product the supplier added after
                     the storefront was built stays invisible however often the job runs. The counter is filled in by
-                    the last publish and costs nothing to read — press <strong>Mark as imported</strong> once you have
-                    listed them, and it counts only what appears after that. <strong>Scan unlisted products</strong>
-                    asks Allegro for the state right now and also looks up a catalogue card for each one.
+                    the last publish and costs nothing to read; above 10 new products the nightly run asks for them on
+                    Telegram. Press <strong>Mark all as seen</strong> once you have reviewed the list: the counter and
+                    the reminder then cover only products that appear after that. <strong>Scan unlisted products</strong>
+                    asks Allegro for the state right now and looks up a catalogue card for each one.
+                </div>
+
+                <div class="row g-3 mb-2">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label" for="templateOfferInput">Template offer id</label>
+                        <input id="templateOfferInput" class="form-control" type="text" @bind="_listingOptions.NewOfferTemplateId" placeholder="e.g. 18913973231" />
+                        <div class="form-text">
+                            New offers copy this offer's shipping rates, handling time, returns, warranty, invoice,
+                            location, condition and GPSR responsible producer and person. Pick one that is set up right.
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-8">
+                        <label class="form-label" for="safetyTextInput">Safety information fallback</label>
+                        <textarea id="safetyTextInput" class="form-control" rows="3" @bind="_listingOptions.NewOfferSafetyText"
+                                  placeholder="Used only when the catalogue card has no safety information"></textarea>
+                        <div class="form-text">
+                            Allegro requires GPSR safety information on every new offer. It is taken from the catalogue
+                            card; this text is used only when the card has none. Leave empty to skip such products.
+                            Saved with <strong>Save all options</strong>.
+                        </div>
+                    </div>
                 </div>
 
                 @if (_unlisted is not null)
                 {
                     <div class="alert alert-info py-2">
-                        <strong>@_unlisted.Count(c => c.CanCreate)</strong> product(s) have a catalogue card and could be listed.
-                        @if (_unlisted.Any(c => !c.CanCreate))
+                        <strong>@_unlisted.Count(c => c.CanCreate)</strong> product(s) have a catalogue card and can be listed.
+                        @foreach (var reason in _unlisted.Where(c => !c.CanCreate).GroupBy(c => c.Problem).OrderByDescending(g => g.Count()))
                         {
-                            <span>@_unlisted.Count(c => !c.CanCreate) could not be resolved.</span>
+                            <div class="small">@reason.Count() — @reason.Key (list these by hand)</div>
                         }
                     </div>
+                    @if (_unlisted.Any(c => c.CanCreate))
+                    {
+                        <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                            <button class="btn btn-primary" disabled="@(allegro.IsPublishing || _createSelected.Count == 0 || string.IsNullOrWhiteSpace(_listingOptions.NewOfferTemplateId))" @onclick="CreateOffers">
+                                @(allegro.IsPublishing ? "Creating..." : $"Create selected ({_createSelected.Count}) on Allegro")
+                            </button>
+                            @if (_createSelected.Count > 0)
+                            {
+                                <button class="btn btn-outline-secondary" disabled="@allegro.IsPublishing" @onclick="() => _createSelected.Clear()">Clear selection</button>
+                            }
+                        </div>
+                        <div class="form-text mb-2">
+                            Tick the products to list. Offers go live straight away, under the supplier's product name,
+                            with the catalogue card's photos and description, priced and stocked by the rules above.
+                            Products sold as packs are listed as packs. Save the options before creating. To never list
+                            a product, add its EAN to the EAN black list.
+                        </div>
+                        <div class="table-responsive mb-3" style="max-height: 260px; overflow-y: auto;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 2rem">
+                                            <input class="form-check-input" type="checkbox" aria-label="Select all"
+                                                   checked="@(_unlisted.Where(c => c.CanCreate).All(c => _createSelected.Contains(c.Product.EAN)))"
+                                                   @onchange="ToggleAllCreate" />
+                                        </th>
+                                        <th>EAN</th><th>Title</th><th class="text-end">Pack</th><th class="text-end">Price</th><th class="text-end">Stock</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var candidate in _unlisted.Where(c => c.CanCreate))
+                                    {
+                                        <tr class="@(_createSelected.Contains(candidate.Product.EAN) ? "table-primary" : "")">
+                                            <td>
+                                                <input class="form-check-input" type="checkbox" aria-label="Create @candidate.Product.EAN"
+                                                       checked="@_createSelected.Contains(candidate.Product.EAN)"
+                                                       @onchange="e => ToggleCreate(candidate.Product.EAN, e)" />
+                                            </td>
+                                            <td>
+                                                <a href="https://allegro.pl/listing?string=@candidate.Product.EAN" target="_blank" rel="noopener" title="Search this EAN on Allegro"><code>@candidate.Product.EAN</code></a>
+                                            </td>
+                                            <td class="small">
+                                                @if (string.IsNullOrEmpty(candidate.Product.Url))
+                                                {
+                                                    @candidate.Name
+                                                }
+                                                else
+                                                {
+                                                    <a href="@candidate.Product.Url" target="_blank" rel="noopener" title="Open on the supplier's site">@candidate.Name</a>
+                                                }
+                                            </td>
+                                            <td class="text-end">@candidate.Pack</td>
+                                            <td class="text-end">@candidate.Price.ToString("0.00")</td>
+                                            <td class="text-end">@candidate.Stock</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
                 }
 
                 <hr />
@@ -575,6 +657,7 @@
     private int _blockedBundles => _bundlePlan?.Count(c => !c.CanConvert) ?? 0;
 
     private List<OfferCreator.Candidate>? _unlisted;
+    private readonly HashSet<string> _createSelected = new();
     private bool _isScanningUnlisted;
 
     private int _unlistedNew;
@@ -605,7 +688,7 @@
         {
             new UnlistedTracker().MarkImported();
             RefreshUnlisted();
-            toastService.ShowSuccess($"Counter cleared. {_unlistedTotal} product(s) still have no offer.");
+            toastService.ShowSuccess($"Marked as seen. {_unlistedTotal} product(s) still have no offer.");
         }
         catch (Exception e)
         {
@@ -727,12 +810,66 @@
         }
     }
 
+    private async Task CreateOffers()
+    {
+        if (_unlisted is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var todo = _unlisted.Where(c => c.CanCreate && _createSelected.Contains(c.Product.EAN)).ToList();
+            var result = await allegro.CreateOffersAsync(todo);
+            if (result.Failed > 0)
+            {
+                toastService.ShowError($"{result.Created} created, {result.Failed} failed - see the log below.");
+            }
+            else
+            {
+                toastService.ShowSuccess($"{result.Created} offer(s) created on Allegro.");
+            }
+            _unlisted = await allegro.PlanNewOffersAsync();
+            _createSelected.IntersectWith(_unlisted.Where(c => c.CanCreate).Select(c => c.Product.EAN));
+            RefreshUnlisted();
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+    }
+
+    private void ToggleCreate(string ean, ChangeEventArgs e)
+    {
+        if (e.Value is true)
+        {
+            _createSelected.Add(ean);
+        }
+        else
+        {
+            _createSelected.Remove(ean);
+        }
+    }
+
+    private void ToggleAllCreate(ChangeEventArgs e)
+    {
+        if (e.Value is true && _unlisted is not null)
+        {
+            _createSelected.UnionWith(_unlisted.Where(c => c.CanCreate).Select(c => c.Product.EAN));
+        }
+        else
+        {
+            _createSelected.Clear();
+        }
+    }
+
     private async Task ScanUnlisted()
     {
         _isScanningUnlisted = true;
         try
         {
             _unlisted = await allegro.PlanNewOffersAsync();
+            _createSelected.Clear();
             toastService.ShowInfo($"{_unlisted.Count(c => c.CanCreate)} product(s) could be listed.");
         }
         catch (Exception e)

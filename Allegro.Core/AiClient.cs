@@ -9,6 +9,7 @@ public sealed class AiClient
     private readonly AnthropicClient _client;
     private long _inputTokens;
     private long _outputTokens;
+    private int _calls;
 
     public AiClient()
     {
@@ -38,12 +39,15 @@ public sealed class AiClient
 
     public long OutputTokens => Interlocked.Read(ref _outputTokens);
 
+    public int Calls => Volatile.Read(ref _calls);
+
     public async Task<string> CompleteAsync(string system, string content)
     {
+        Interlocked.Increment(ref _calls);
         var response = await _client.Messages.Create(new MessageCreateParams
         {
             Model = Model,
-            MaxTokens = 4096,
+            MaxTokens = 16000,
             System = system,
             Messages = [new() { Role = Role.User, Content = content }],
         });

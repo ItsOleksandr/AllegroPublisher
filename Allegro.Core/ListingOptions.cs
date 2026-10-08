@@ -6,6 +6,8 @@ public class ListingOptions
     public decimal MinimalPrice { get; set; } = 0m;
     public int BundleFromQuantity { get; set; } = 5;
     public int StaleAfterHours { get; set; } = 48;
+    public string NewOfferTemplateId { get; set; } = "";
+    public string NewOfferSafetyText { get; set; } = "";
     public List<PackTier> PackDivisors { get; set; } = new()
     {
         new PackTier { MaxMinOrder = 10, Divisor = 1 },
