@@ -85,25 +85,10 @@ public sealed class ContentApplier
 
         draft.OriginalDescriptionJson ??= offer["description"]?.ToJsonString();
 
-        var sections = new JsonArray
-        {
-            new JsonObject
-            {
-                ["items"] = new JsonArray(new JsonObject { ["type"] = "TEXT", ["content"] = draft.Description }),
-            },
-        };
-        foreach (var url in ReadImages(offer["description"]))
-        {
-            sections.Add(new JsonObject
-            {
-                ["items"] = new JsonArray(new JsonObject { ["type"] = "IMAGE", ["url"] = url }),
-            });
-        }
-
         var payload = new JsonObject
         {
             ["name"] = draft.Name,
-            ["description"] = new JsonObject { ["sections"] = sections },
+            ["description"] = new JsonObject { ["sections"] = BuildSections(draft, offer) },
         };
 
         var (status, body) = await _publisher.SendJsonRawAsync(HttpMethod.Patch, $"/sale/product-offers/{draft.OfferId}",
@@ -113,6 +98,59 @@ public sealed class ContentApplier
             throw new InvalidOperationException($"PATCH {status}: {ReadError(body)}");
         }
     }
+
+    public static JsonArray BuildSections(ContentDraft draft, JsonNode offer)
+    {
+        var blocks = draft.Blocks.Count > 0 ? draft.Blocks : new List<string> { draft.Description };
+        var gallery = (offer["images"]?.AsArray() ?? new JsonArray())
+            .Select(image => image is JsonObject ? image["url"]?.ToString() : image?.ToString())
+            .Where(url => !string.IsNullOrEmpty(url))
+            .Select(url => url!)
+            .Distinct()
+            .ToList();
+        var ownImages = ReadImages(offer["description"]).Where(url => !gallery.Contains(url)).Distinct().ToList();
+
+        var slots = blocks.Count(TakesPhoto);
+        var photos = new Queue<string>(gallery.Count > slots ? gallery.Skip(1) : gallery);
+
+        var sections = new JsonArray();
+        var photoOnRight = true;
+        foreach (var block in blocks)
+        {
+            var text = new JsonObject { ["type"] = "TEXT", ["content"] = block };
+            if (TakesPhoto(block) && photos.Count > 0)
+            {
+                var image = new JsonObject { ["type"] = "IMAGE", ["url"] = photos.Dequeue() };
+                sections.Add(new JsonObject
+                {
+                    ["items"] = photoOnRight ? new JsonArray(text, image) : new JsonArray(image, text),
+                });
+                photoOnRight = !photoOnRight;
+            }
+            else
+            {
+                sections.Add(new JsonObject { ["items"] = new JsonArray(text) });
+            }
+        }
+
+        foreach (var url in ownImages)
+        {
+            sections.Add(new JsonObject
+            {
+                ["items"] = new JsonArray(new JsonObject { ["type"] = "IMAGE", ["url"] = url }),
+            });
+        }
+        return sections;
+    }
+
+    private static bool TakesPhoto(string block) =>
+        !NoPhotoHeadings.Any(heading => block.Contains(heading, StringComparison.OrdinalIgnoreCase))
+        && PlainLength(block) <= 900;
+
+    private static readonly string[] NoPhotoHeadings = { ">Specyfikacja<", ">Najczęstsze pytania<", ">Zawartość zestawu<" };
+
+    private static int PlainLength(string html) =>
+        System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", "").Trim().Length;
 
     private static IEnumerable<string> ReadImages(JsonNode? description)
     {

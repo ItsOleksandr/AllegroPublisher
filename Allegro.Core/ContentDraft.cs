@@ -8,6 +8,7 @@ public class ContentDraft
     public string BaseName { get; set; } = "";
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
+    public List<string> Blocks { get; set; } = new();
     public string? OriginalDescriptionJson { get; set; }
     public int Pack { get; set; } = 1;
     public string? Warning { get; set; }

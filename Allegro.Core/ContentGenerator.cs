@@ -13,6 +13,7 @@ public sealed class ContentGenerator
     private const string EanParameterId = "225693";
     private const int Parallelism = 4;
     private const int Attempts = 3;
+    private const int MaxDescriptionBytes = 30000;
 
     private static readonly Regex PackPrefix = new(@"^Zestaw \d+ szt\. ", RegexOptions.Compiled);
     private static readonly Regex SupplierCode = new(@"\bXJ\d+\b|\b\d{5}\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -214,7 +215,8 @@ public sealed class ContentGenerator
                     OldName = source.Name,
                     BaseName = parsed.Value.Title,
                     Name = BundlePlan.BuildName(parsed.Value.Title, source.Pack),
-                    Description = parsed.Value.Description,
+                    Description = string.Concat(parsed.Value.Blocks),
+                    Blocks = parsed.Value.Blocks,
                     Pack = source.Pack,
                     Warning = FindWarning(source, parsed.Value.Title),
                     Status = ContentDraftStatus.Generated,
@@ -303,7 +305,7 @@ public sealed class ContentGenerator
         return string.Join("\n", parts);
     }
 
-    private static (string Title, string Description)? Parse(string answer, int limit, out string? problem)
+    private static (string Title, List<string> Blocks)? Parse(string answer, int limit, out string? problem)
     {
         var json = Regex.Replace(answer.Trim(), @"^```(?:json)?\s*|\s*```$", "");
         JsonNode? node;
@@ -318,18 +320,22 @@ public sealed class ContentGenerator
         }
 
         var title = BundlePlan.SanitizeName(node?["title"]?.ToString() ?? "");
-        var description = node?["description"]?.ToString() ?? "";
-        var badTags = AnyTag.Matches(description).Select(m => m.Groups[1].Value)
+        var blocks = (node?["sections"] as JsonArray)?.Select(b => b?.ToString() ?? "").Where(HasText).ToList()
+                     ?? new List<string> { node?["description"]?.ToString() ?? "" };
+        var all = string.Concat(blocks);
+        var badTags = AnyTag.Matches(all).Select(m => m.Groups[1].Value)
             .Where(tag => !AllowedTags.Contains(tag)).Distinct().ToList();
 
         problem = title.Length == 0 ? "brak tytułu"
             : title.Length > limit ? $"tytuł ma {title.Length} znaków, limit to {limit}"
             : badTags.Count > 0 ? $"niedozwolone tagi HTML: {string.Join(", ", badTags)}"
-            : PlainText(description).Length < 200 ? "opis jest za krótki"
+            : blocks.Count < 2 ? "opis musi mieć kilka bloków w tablicy \"sections\""
+            : PlainText(all).Length < 500 ? "opis jest za krótki"
+            : System.Text.Encoding.UTF8.GetByteCount(all) > MaxDescriptionBytes ? "opis jest za długi"
             : null;
 
         return problem is null
-            ? (title, AllowedTag.Replace(description, m => $"<{m.Groups[1].Value}{m.Groups[2].Value.ToLowerInvariant()}>"))
+            ? (title, blocks.Select(b => AllowedTag.Replace(b, m => $"<{m.Groups[1].Value}{m.Groups[2].Value.ToLowerInvariant()}>")).ToList())
             : null;
     }
 
@@ -395,7 +401,7 @@ public sealed class ContentGenerator
     {
         var packRule = pack > 1
             ? $"""
-               - To oferta ZESTAWU {pack} sztuk tego samego produktu. Tytuł zostanie poprzedzony prefiksem "Zestaw {pack} szt. ", więc NIE dodawaj liczby sztuk zestawu do tytułu. Na samym końcu opisu, po specyfikacji, dodaj sekcję <h2>Zawartość zestawu</h2> z jednym krótkim zdaniem, np. "Zestaw zawiera {pack} szt. lup metalowych 100 mm." - rzeczownik po "szt." zawsze w dopełniaczu liczby mnogiej ("{pack} szt. lup", "{pack} szt. prowadników", "{pack} szt. misek", "{pack} szt. szczypiec"). Co zawiera każda sztuka dopisz tylko wtedy, gdy oprócz samego produktu są w niej dodatkowe elementy (np. "każda z 2 kółkami, 2 uchwytami i kompletem śrub"); nie pisz "każda sztuka to jedna ...". Nie dopisuj, dla kogo jest zestaw ani że to sprzedaż hurtowa, i nie powtarzaj liczby sztuk zestawu w specyfikacji.
+               - To oferta ZESTAWU {pack} sztuk tego samego produktu. Tytuł zostanie poprzedzony prefiksem "Zestaw {pack} szt. ", więc NIE dodawaj liczby sztuk zestawu do tytułu. Jako ostatni, osobny blok, po specyfikacji, dodaj <h2>Zawartość zestawu</h2> z jednym krótkim zdaniem, np. "Zestaw zawiera {pack} szt. lup metalowych 100 mm." - rzeczownik po "szt." zawsze w dopełniaczu liczby mnogiej ("{pack} szt. lup", "{pack} szt. prowadników", "{pack} szt. misek", "{pack} szt. szczypiec"). Co zawiera każda sztuka dopisz tylko wtedy, gdy oprócz samego produktu są w niej dodatkowe elementy (np. "każda z 2 kółkami, 2 uchwytami i kompletem śrub"); nie pisz "każda sztuka to jedna ...". Nie dopisuj, dla kogo jest zestaw ani że to sprzedaż hurtowa, i nie powtarzaj liczby sztuk zestawu w specyfikacji.
                """
             : "";
 
@@ -418,19 +424,23 @@ public sealed class ContentGenerator
                  - Bez słów promocyjnych i ocen ("najlepszy", "hit", "okazja", "super", "promocja"), bez wykrzykników i emoji.
 
                  OPIS - ma pomóc kupującemu zdecydować i wspierać pozycjonowanie
-                 - Dozwolone są WYŁĄCZNIE tagi HTML: <h2>, <p>, <ul>, <ol>, <li>, <b>. Nie używaj <h1> (tytuł oferty jest już nagłówkiem strony). Żadnych innych tagów, atrybutów, stylów, linków ani emoji.
-                 - Struktura w tej kolejności:
-                   1. <h2> z główną frazą: rodzaj produktu + najważniejsza cecha.
-                   2. <p> 2-3 zdania: czym jest produkt i do czego służy. Główna fraza naturalnie w pierwszym zdaniu, synonim wprowadzony poprawnie odmienionym zwrotem ("lupa, czyli szkło powiększające", "prowadnik, zwany też pchaczem").
-                   3. <h2>Najważniejsze cechy</h2> i <ul> z 3-6 punktami w formie "<b>cecha</b> - konkretna korzyść", np. "<b>Szklana soczewka 100 mm</b> - duże pole powiększenia przy czytaniu drobnego druku". Korzyść musi wynikać wprost z cechy. Jeśli cecha nie daje oczywistej korzyści, podaj samą cechę bez dopisku - nigdy nie twórz sztucznych korzyści typu "wymiar pomocny przy ocenie rozmiaru", "pasuje do większości wnętrz", "estetyczne przechowywanie".
-                   4. <h2>Zastosowanie</h2> i krótka lista <ul> lub akapit <p> - tylko zastosowania oczywiste dla tego rodzaju produktu. Pomiń tę sekcję, jeśli danych jest za mało.
-                   5. <h2>Specyfikacja</h2> i <ul> w formie "Parametr: wartość" - wszystkie konkretne parametry z danych (wymiary, materiały poszczególnych części, kolor, pojemność, liczba elementów).
+                 - Opis składa się z osobnych bloków. Obok bloków z treścią sklep wstawi zdjęcia produktu, więc każdy blok to jeden temat z własnym nagłówkiem <h2>.
+                 - Dozwolone są WYŁĄCZNIE tagi HTML: <h2>, <p>, <ul>, <ol>, <li>, <b>. Nie używaj <h1> (tytuł oferty jest już nagłówkiem strony) ani <br>. Żadnych innych tagów, atrybutów, stylów, linków ani emoji.
+                 - Bloki w tej kolejności (pomiń blok, na który brakuje danych):
+                   1. Wstęp: <h2> z główną frazą (rodzaj produktu + najważniejsza cecha) i 2 akapity <p>: czym jest produkt, do czego służy i dla kogo. Główna fraza naturalnie w pierwszym zdaniu, synonim wprowadzony poprawnie odmienionym zwrotem ("lupa, czyli szkło powiększające", "prowadnik, zwany też pchaczem").
+                   2. <h2>Najważniejsze cechy</h2> i <ul> z 4-7 punktami w formie "<b>cecha</b> - konkretna korzyść", np. "<b>Szklana soczewka 100 mm</b> - duże pole powiększenia przy czytaniu drobnego druku". Korzyść musi wynikać wprost z cechy. Jeśli cecha nie daje oczywistej korzyści, podaj samą cechę bez dopisku - nigdy nie twórz sztucznych korzyści typu "wymiar pomocny przy ocenie rozmiaru", "pasuje do większości wnętrz", "estetyczne przechowywanie".
+                   3. <h2> o wykonaniu i budowie (np. "Wykonanie i budowa", "Jak działa") i 1-2 akapity <p>: z czego i jak jest zrobiony, z jakich części się składa, jak działa mechanizm - rozwinięcie cech z danych, bez nowych faktów.
+                   4. <h2>Zastosowanie</h2> i lista <ul> lub akapit <p> - zastosowania oczywiste dla tego rodzaju produktu i wymienione w danych.
+                   5. <h2>Jak używać</h2> - tylko jeśli dane zawierają instrukcję, montaż, ustawianie lub pielęgnację; lista <ol> kroków.
+                   6. <h2>Najczęstsze pytania</h2> - 2-4 pytania, które kupujący naprawdę zadają przy tym produkcie (rozmiar, dopasowanie, materiał, co jest w zestawie, czy można wybrać kolor), każde jako <p><b>Pytanie?</b></p> i <p>odpowiedź</p>. Odpowiedzi wyłącznie z danych; nie zadawaj pytań, na które dane nie odpowiadają.
+                   7. <h2>Specyfikacja</h2> i <ul> w formie "Parametr: wartość" - wszystkie konkretne parametry z danych (wymiary, materiały poszczególnych części, kolor, pojemność, liczba elementów).
+                 - Bloki 1-4 mają po 40-120 słów, żeby dobrze wyglądały obok zdjęcia. Cały opis zwykle 300-500 słów. Jeśli danych jest mało, napisz mniej bloków i krótszy opis (minimum około 120 słów) zamiast dopisywać ogólniki.
                  - Główną frazę użyj w całym opisie 2-3 razy, synonimy 1-2 razy - naturalnie, bez upychania słów kluczowych.
                  - Krótkie akapity (najwyżej 3 zdania), krótkie zdania, bez powtarzania tych samych informacji w kilku sekcjach.
-                 - Zwykle 120-250 słów. Jeśli danych jest mało, napisz krótszy opis (minimum około 60 słów) zamiast dopisywać ogólniki.
                  - Konkretnie, bez lania wody i bez obietnic, których nie da się sprawdzić. Nie dopisuj od siebie ocen wyglądu, kształtu, jakości ani właściwości, których nie ma w danych (np. "solidny wygląd", "klasyczny kształt", "szerokie pole widzenia").
                  - Pomiń marketingowe zwroty dostawcy, które nie opisują konkretnej cechy (np. "idealny pomysł na prezent", "bardzo wygodna w użyciu", "idealnie nadaje się").
                  - Nie powołuj się na źródło ("według opisu dostawcy", "według producenta", "jak podaje sprzedawca") - fakt z danych podaj wprost, a twierdzenie, którego nie chcesz podać wprost, pomiń.
+                 - Nie odwołuj się do zdjęć ("na zdjęciu", "jak widać na fotografii", "oznaczony na zdjęciu") - nie wiadomo, które zdjęcie będzie obok tekstu; opisz element słowami.
                  - Pomiń twierdzenia o zdrowiu i wpływie na organizm ludzi lub zwierząt (np. "wspiera stawy", "zdrowa postawa", "poprawia trawienie"), nawet jeśli są w danych.
                  - Materiał podawaj zawsze dla konkretnej części, której dotyczy (np. obudowa: metal, soczewka: szkło), nigdy jako materiał całego produktu, jeśli dane tego nie mówią.
                  - Informacja o sprzedaży hurtowej lub zestawie nie jest cechą produktu - nie umieszczaj jej w sekcji "Najważniejsze cechy".
@@ -443,10 +453,10 @@ public sealed class ContentGenerator
                  - Kolor losowy: jeśli dane mówią, że produkt (lub jego część) jest w kilku wersjach kolorystycznych, "mix kolorów" albo że kolor jest wysyłany losowo, kupujący nie może wybrać koloru. Wtedy NIE wymieniaj żadnych kolorów - ani w tytule, ani w opisie - i nie zachęcaj do wyboru. W specyfikacji napisz tylko "Kolor: wysyłany losowo, bez możliwości wyboru" (lub np. "Kolor szpilek: wysyłany losowo, bez możliwości wyboru", jeśli dotyczy jednej części).
                  - "Wielokolorowy" oznacza produkt w wielu kolorach naraz, a nie losowy kolor. Nie dopisuj koloru części, o której dane nic nie mówią. Jeśli danych dostawcy brak, a pozostałe źródła są sprzeczne, pomiń sporną informację.
                  - Pomiń z opisu dostawcy informacje handlowe: ceny, ilość w kartonie, minimalne zamówienie, prośby o kontakt.
-                 - Pomiń parametry techniczne bez wartości dla kupującego (kod taryfy celnej, "brak", "inny") oraz nazwy innych marek niż marka produktu.
+                 - Pomiń parametry techniczne bez wartości dla kupującego (kod taryfy celnej, "brak", "inny", "bezklasowe", "nie dotyczy") oraz nazwy innych marek niż marka produktu.
                  {{packRule}}
-                 Odpowiedz WYŁĄCZNIE poprawnym JSON-em, bez komentarzy i bez bloku kodu:
-                 {"title": "...", "description": "..."}
+                 Odpowiedz WYŁĄCZNIE poprawnym JSON-em, bez komentarzy i bez bloku kodu - każdy blok opisu jako osobny element tablicy:
+                 {"title": "...", "sections": ["<h2>...</h2><p>...</p>", "<h2>Najważniejsze cechy</h2><ul>...</ul>", "..."]}
                  """;
     }
 }

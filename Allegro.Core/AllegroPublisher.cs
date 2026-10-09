@@ -193,7 +193,7 @@ public class AllegroPublisher
         var body = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
         {
-            log?.Invoke($"Refresh failed ({(int)response.StatusCode}): {body}");
+            log?.Invoke($"Refresh failed ({(int)response.StatusCode}): {TryReadError(body) ?? "unknown error"}");
             return false;
         }
 
