@@ -157,7 +157,8 @@ public sealed class ContentGenerator
     private record Source(
         string OfferId, string Ean, string Name, int Pack, string? CategoryName, string? CardName,
         List<string> Parameters, string Description, string CardDescription,
-        string? SupplierName, string? SupplierDescription);
+        string? SupplierName, string? SupplierDescription,
+        List<string> Gallery, List<string> DescriptionImages);
 
     private async Task<ContentDraft> GenerateOneAsync(AiClient ai, string offerId, string ean, ProductInfo? product)
     {
@@ -217,6 +218,8 @@ public sealed class ContentGenerator
                     Name = BundlePlan.BuildName(parsed.Value.Title, source.Pack),
                     Description = string.Concat(parsed.Value.Blocks),
                     Blocks = parsed.Value.Blocks,
+                    GalleryImages = source.Gallery,
+                    DescriptionImages = source.DescriptionImages,
                     Pack = source.Pack,
                     Warning = FindWarning(source, parsed.Value.Title),
                     Status = ContentDraftStatus.Generated,
@@ -256,7 +259,9 @@ public sealed class ContentGenerator
             ReadDescription(offer["description"]),
             ReadDescription(card?["description"]),
             null,
-            null);
+            null,
+            ContentApplier.GalleryOf(offer),
+            ContentApplier.DescriptionImagesOf(offer, ContentApplier.GalleryOf(offer)));
     }
 
     private static List<string> ReadParameters(JsonNode? card)

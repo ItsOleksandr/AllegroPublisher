@@ -114,7 +114,30 @@
                                     }
                                     @if (_open.Contains(draft.Ean))
                                     {
-                                        <div class="border rounded p-3 mt-2 small allegro-preview">@((MarkupString)draft.Description)</div>
+                                        <div class="border rounded p-3 mt-2 small allegro-preview">
+                                            @foreach (var section in ContentApplier.BuildSections(draft, draft.GalleryImages, draft.DescriptionImages))
+                                            {
+                                                <div class="d-flex flex-wrap flex-md-nowrap gap-3 align-items-center py-2 border-top">
+                                                    @foreach (var item in section!["items"]!.AsArray())
+                                                    {
+                                                        <div style="flex: 1 1 0; min-width: 0;">
+                                                            @if (item!["type"]!.ToString() == "IMAGE")
+                                                            {
+                                                                <img src="@item["url"]" alt="" style="max-width: 100%; max-height: 260px; object-fit: contain;" />
+                                                            }
+                                                            else
+                                                            {
+                                                                @((MarkupString)item["content"]!.ToString())
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                            @if (draft.GalleryImages.Count == 0)
+                                            {
+                                                <div class="text-muted pt-2">This draft was generated before photos were tracked - the offer's gallery photos are still added when you apply it.</div>
+                                            }
+                                        </div>
                                     }
                                 </td>
                                 <td class="text-end">

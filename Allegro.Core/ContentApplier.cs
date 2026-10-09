@@ -101,14 +101,24 @@ public sealed class ContentApplier
 
     public static JsonArray BuildSections(ContentDraft draft, JsonNode offer)
     {
-        var blocks = draft.Blocks.Count > 0 ? draft.Blocks : new List<string> { draft.Description };
-        var gallery = (offer["images"]?.AsArray() ?? new JsonArray())
+        var gallery = GalleryOf(offer);
+        return BuildSections(draft, gallery, DescriptionImagesOf(offer, gallery));
+    }
+
+    public static List<string> GalleryOf(JsonNode offer) =>
+        (offer["images"]?.AsArray() ?? new JsonArray())
             .Select(image => image is JsonObject ? image["url"]?.ToString() : image?.ToString())
             .Where(url => !string.IsNullOrEmpty(url))
             .Select(url => url!)
             .Distinct()
             .ToList();
-        var ownImages = ReadImages(offer["description"]).Where(url => !gallery.Contains(url)).Distinct().ToList();
+
+    public static List<string> DescriptionImagesOf(JsonNode offer, IReadOnlyCollection<string> gallery) =>
+        ReadImages(offer["description"]).Where(url => !gallery.Contains(url)).Distinct().ToList();
+
+    public static JsonArray BuildSections(ContentDraft draft, IReadOnlyList<string> gallery, IReadOnlyList<string> ownImages)
+    {
+        var blocks = draft.Blocks.Count > 0 ? draft.Blocks : new List<string> { draft.Description };
 
         var slots = blocks.Count(TakesPhoto);
         var photos = new Queue<string>(gallery.Count > slots ? gallery.Skip(1) : gallery);
