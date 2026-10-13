@@ -7,7 +7,20 @@ public class ListingOptions
     public int BundleFromQuantity { get; set; } = 5;
     public int StaleAfterHours { get; set; } = 48;
     public string NewOfferTemplateId { get; set; } = "";
+    public bool AutoCreateOffers { get; set; } = true;
+    public int AutoContentPerRun { get; set; } = 50;
     public string NewOfferSafetyText { get; set; } = "";
+
+    public const string StandardSafetyText =
+        "Informacje dotyczące bezpieczeństwa zgodnie z Rozporządzeniem (UE) 2023/988 w sprawie ogólnego bezpieczeństwa produktów (GPSR):\n" +
+        "- Przed użyciem zapoznaj się z opisem produktu i używaj go wyłącznie zgodnie z przeznaczeniem.\n" +
+        "- Przed każdym użyciem sprawdź, czy produkt nie jest uszkodzony. Nie używaj produktu uszkodzonego ani niekompletnego.\n" +
+        "- Przechowuj produkt i opakowanie poza zasięgiem małych dzieci. Drobne elementy oraz folia mogą stwarzać ryzyko zadławienia lub uduszenia.\n" +
+        "- Produkt nie jest zabawką, chyba że opis stanowi inaczej. Jeśli korzystają z niego dzieci, powinno to odbywać się pod nadzorem osoby dorosłej.\n" +
+        "- Zachowaj ostrożność przy elementach ostrych, gorących lub ruchomych.\n" +
+        "- Przechowuj produkt w suchym miejscu, z dala od źródeł ciepła i otwartego ognia, chyba że jest do tego przeznaczony.\n" +
+        "- Czyść produkt odpowiednio do materiału, z którego jest wykonany. Nie używaj żrących środków czyszczących.\n" +
+        "- Zużyty produkt i opakowanie przekaż do odpowiedniego punktu zbiórki odpadów.";
     public List<PackTier> PackDivisors { get; set; } = new()
     {
         new PackTier { MaxMinOrder = 10, Divisor = 1 },

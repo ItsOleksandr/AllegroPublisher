@@ -448,26 +448,40 @@
 
                 <hr />
 
+                <h6 class="fw-semibold">Automatic runs</h6>
+                <div class="row g-3 mb-2">
+                    <div class="col-12 col-md-6">
+                        <div class="form-check">
+                            <input id="autoCreateCheck" class="form-check-input" type="checkbox" @bind="_listingOptions.AutoCreateOffers" />
+                            <label class="form-check-label" for="autoCreateCheck">List new products automatically</label>
+                        </div>
+                        <div class="form-text">
+                            After every parse, offers are created for all products that have none yet and can be listed
+                            automatically (see the list below). Needs the template offer to be set.
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="autoContentInput">AI titles and descriptions per run</label>
+                        <input id="autoContentInput" class="form-control" type="number" min="0" style="max-width: 140px" @bind="_listingOptions.AutoContentPerRun" />
+                        <div class="form-text">
+                            After every parse, this many offers - weakest titles first - get a new AI title and description,
+                            applied straight away. Drafts whose data disagrees with the supplier wait on the
+                            <a href="/content">Titles &amp; descriptions</a> page. 0 = off.
+                        </div>
+                    </div>
+                </div>
+
                 <h6 class="fw-semibold">Products with no offer</h6>
                 <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
-                    <span class="badge @(_unlistedNew > 0 ? "bg-warning text-dark" : "bg-secondary") fs-6">
-                        @_unlistedNew new
-                    </span>
-                    <span class="text-muted small">@_unlistedTotal without an offer in total</span>
-                    <button class="btn btn-outline-secondary" disabled="@(_unlistedNew == 0)" @onclick="MarkImported">
-                        Mark all as seen
-                    </button>
                     <button class="btn btn-outline-secondary" disabled="@(!allegro.Settings.IsConnected || _isScanningUnlisted)" @onclick="ScanUnlisted">
                         @(_isScanningUnlisted ? "Scanning..." : "Scan unlisted products")
                     </button>
                 </div>
                 <div class="form-text mb-2">
-                    Publishing only ever updates offers that already exist, so a product the supplier added after
-                    the storefront was built stays invisible however often the job runs. The counter is filled in by
-                    the last publish and costs nothing to read; above 10 new products the nightly run asks for them on
-                    Telegram. Press <strong>Mark all as seen</strong> once you have reviewed the list: the counter and
-                    the reminder then cover only products that appear after that. <strong>Scan unlisted products</strong>
-                    asks Allegro for the state right now and looks up a catalogue card for each one.
+                    Shows which sellable products have no offer right now and why some of them cannot be listed
+                    automatically - no catalogue card, several cards for one EAN, or a category that needs details
+                    filled in by hand. Those have to be listed in Sales Center. You can also create selected offers
+                    here without waiting for the next run.
                 </div>
 
                 <div class="row g-3 mb-2">
@@ -483,10 +497,14 @@
                         <label class="form-label" for="safetyTextInput">Safety information fallback</label>
                         <textarea id="safetyTextInput" class="form-control" rows="3" @bind="_listingOptions.NewOfferSafetyText"
                                   placeholder="Used only when the catalogue card has no safety information"></textarea>
+                        <button type="button" class="btn btn-sm btn-outline-secondary mt-1" @onclick="() => _listingOptions.NewOfferSafetyText = ListingOptions.StandardSafetyText">
+                            Use standard text
+                        </button>
                         <div class="form-text">
                             Allegro requires GPSR safety information on every new offer. It is taken from the catalogue
-                            card; this text is used only when the card has none. Leave empty to skip such products.
-                            Saved with <strong>Save all options</strong>.
+                            card; this text is used only when the card has none. <strong>Use standard text</strong> fills in
+                            general warnings that fit most household products - read it and adjust it before saving. Leave
+                            empty to skip such products. Saved with <strong>Save all options</strong>.
                         </div>
                     </div>
                 </div>
@@ -660,9 +678,6 @@
     private readonly HashSet<string> _createSelected = new();
     private bool _isScanningUnlisted;
 
-    private int _unlistedNew;
-    private int _unlistedTotal;
-
     protected override void OnInitialized()
     {
         _logRefreshTimer = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
@@ -672,28 +687,6 @@
     {
         _lastParsing = SaverExtensions.LastParse.Read();
         _listingOptions = SaverExtensions.ListingOptions.Read();
-        RefreshUnlisted();
-    }
-
-    private void RefreshUnlisted()
-    {
-        var tracker = new UnlistedTracker();
-        _unlistedNew = tracker.NewCount;
-        _unlistedTotal = tracker.Count;
-    }
-
-    private void MarkImported()
-    {
-        try
-        {
-            new UnlistedTracker().MarkImported();
-            RefreshUnlisted();
-            toastService.ShowSuccess($"Marked as seen. {_unlistedTotal} product(s) still have no offer.");
-        }
-        catch (Exception e)
-        {
-            toastService.ShowError(e.Message);
-        }
     }
 
     public void Dispose()
@@ -831,7 +824,6 @@
             }
             _unlisted = await allegro.PlanNewOffersAsync();
             _createSelected.IntersectWith(_unlisted.Where(c => c.CanCreate).Select(c => c.Product.EAN));
-            RefreshUnlisted();
         }
         catch (Exception e)
         {

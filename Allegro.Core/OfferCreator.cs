@@ -13,6 +13,8 @@ public sealed class OfferCreator
     private const int MaxImages = 16;
     private const int LookupParallelism = 6;
 
+    private static readonly ConcurrentDictionary<string, List<string>> UnhandledOfferParameters = new();
+
     private readonly AllegroPublisher _publisher;
 
     public OfferCreator(AllegroPublisher publisher)
@@ -103,7 +105,72 @@ public sealed class OfferCreator
             candidates.Add(candidate);
         }
 
+        foreach (var categoryId in candidates.Where(c => c.CanCreate).Select(c => c.CategoryId!).Distinct().ToList())
+        {
+            var manual = await UnhandledOfferParametersAsync(categoryId);
+            if (manual.Count == 0)
+            {
+                continue;
+            }
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                if (candidates[i].CanCreate && candidates[i].CategoryId == categoryId)
+                {
+                    candidates[i] = candidates[i] with
+                    {
+                        Problem = $"the category needs offer parameters filled by hand: {string.Join(", ", manual)}",
+                    };
+                }
+            }
+        }
+
         return candidates;
+    }
+
+    private async Task<List<string>> UnhandledOfferParametersAsync(string categoryId)
+    {
+        if (UnhandledOfferParameters.TryGetValue(categoryId, out var cached))
+        {
+            return cached;
+        }
+
+        var (status, body) = await _publisher.GetRawAsync($"/sale/categories/{Uri.EscapeDataString(categoryId)}/parameters");
+        if (status is < 200 or >= 300)
+        {
+            return new List<string>();
+        }
+
+        var names = (JsonNode.Parse(body)?["parameters"]?.AsArray() ?? new JsonArray())
+            .Where(p => p?["required"]?.GetValue<bool>() == true
+                        && p["options"]?["describesProduct"]?.GetValue<bool>() != true
+                        && p["id"]?.ToString() != ConditionParameterId)
+            .Select(p => p!["name"]?.ToString() ?? p["id"]!.ToString())
+            .ToList();
+        UnhandledOfferParameters[categoryId] = names;
+        return names;
+    }
+
+    public async Task<Result> CreateAllAsync(Action<string>? log = null)
+    {
+        if (string.IsNullOrWhiteSpace(SaverExtensions.ListingOptions.Read().NewOfferTemplateId))
+        {
+            log?.Invoke("New offers are not created: no template offer is set.");
+            return new Result(0, 0);
+        }
+
+        var plan = await PlanAsync(log);
+        foreach (var reason in plan.Where(c => !c.CanCreate).GroupBy(c => c.Problem).OrderByDescending(g => g.Count()))
+        {
+            log?.Invoke($"  {reason.Count(),4} not created - {reason.Key}");
+        }
+
+        var todo = plan.Where(c => c.CanCreate).ToList();
+        if (todo.Count == 0)
+        {
+            log?.Invoke("No new offers to create.");
+            return new Result(0, 0);
+        }
+        return await CreateAsync(todo, log);
     }
 
     public async Task<Result> CreateAsync(IEnumerable<Candidate> candidates, Action<string>? log = null)

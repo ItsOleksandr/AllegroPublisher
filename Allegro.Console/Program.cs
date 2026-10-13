@@ -102,9 +102,36 @@ await new BundleConverter(publisher).ConvertAsync(bundlePlan, log: Console.Write
 var updated = await publisher.PublishAsync(Console.WriteLine);
 Console.WriteLine($"Publish finished: {updated} offers updated.");
 
-var tracker = new UnlistedTracker();
-if (tracker.NewCount > 10)
+var listingOptions = SaverExtensions.ListingOptions.Read();
+
+if (listingOptions.AutoCreateOffers)
 {
-    TelegramNotify notify = new TelegramNotify();
-    await notify.SendAdminAsync($"#AllegroApp {tracker.NewCount} new products have been added; please import them.");
+    await RunStepAsync("Creating offers for new products", () => new OfferCreator(publisher).CreateAllAsync(Console.WriteLine));
+}
+
+if (listingOptions.AutoContentPerRun > 0)
+{
+    await RunStepAsync($"Rewriting titles and descriptions of {listingOptions.AutoContentPerRun} offers",
+        () => AutoContent.RunAsync(publisher, listingOptions.AutoContentPerRun, Console.WriteLine));
+}
+
+static async Task RunStepAsync(string name, Func<Task> step)
+{
+    Console.WriteLine($"{name} ...");
+    try
+    {
+        await step();
+    }
+    catch (Exception e)
+    {
+        Console.WriteLine($"{name} failed: {e.Message}");
+        try
+        {
+            await new TelegramNotify().SendAdminAsync($"#AllegroApp {name} failed: {e.Message}");
+        }
+        catch (Exception notifyError)
+        {
+            Console.WriteLine($"Telegram notification failed: {notifyError.Message}");
+        }
+    }
 }

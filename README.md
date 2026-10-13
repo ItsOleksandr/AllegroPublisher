@@ -44,7 +44,7 @@ offers back to single units.
 Allegro's OAuth2 **device flow**, then matches each row to an existing offer by
 `external.id == EAN` — the standard way Allegro keys offers to an external
 inventory system — and updates price and stock. Products with no matching offer
-are skipped; creating new offers is deliberately out of scope. Only a price or stock
+are skipped here and listed in the next step. Only a price or stock
 that actually differs is sent. Offers in an Allegro campaign (Allegro Days and
 other badges, `GET /sale/badges`), or waiting for one, keep their price until the
 campaign ends, so a publish never knocks them out of it; stock is still updated.
@@ -55,10 +55,21 @@ so its offer ends; any product the parser has not refreshed for
 than half the catalogue is that old — then the parser is assumed broken, stock is
 left alone and Telegram is told.
 
-**5 — Report.** `TelegramNotify` speaks up when something needs a human:
-the supplier login has failed three times running, or `UnlistedTracker` has
-counted more than ten sellable products that still have no offer and so need
-listing by hand. A quiet run sends nothing.
+**5 — List new products.** `OfferCreator` creates an offer for every sellable
+product that has none yet: it finds the product's Allegro catalogue card by EAN,
+copies delivery, returns, invoice, location and GPSR settings from a template
+offer, and takes the category, photos, description and safety information from
+the card. Products with no card, several cards, or a category that needs details
+only a person can declare (such as medical-device status) are left for Sales Center.
+
+**6 — Rewrite content.** `AutoContent` gives a batch of offers, weakest titles
+first, a new AI title and description (`ContentGenerator`, Claude through the
+Anthropic API) and applies them (`ContentApplier`), placing gallery photos next to
+the text blocks. Drafts whose data disagrees with the supplier wait for review.
+
+**7 — Report.** `TelegramNotify` speaks up when something needs a human: the
+supplier login has failed three times running, or one of the steps above failed.
+A quiet run sends nothing.
 
 ### Keeping the token alive
 
@@ -80,8 +91,8 @@ The shared library — no UI, no entry point.
 | `ListingOptions.cs` | Every rule in one place: what gets sold, at what price, singly or as a pack |
 | `BundlePlan.cs` | Works out which offers should be packs, and of what size. Writes nothing |
 | `BundleConverter.cs` | Applies that plan — the only code that rewrites a live offer |
-| `OfferCreator.cs` | Finds catalogue cards for products that have no offer at all |
-| `UnlistedTracker.cs` | Counts products still waiting to be listed by hand |
+| `OfferCreator.cs` | Creates offers for products that have none, from their catalogue card and a template offer |
+| `ContentGenerator.cs`, `ContentApplier.cs`, `AutoContent.cs` | AI titles and descriptions: generate, review, apply |
 | `Saver.cs` | Small typed JSON file store used for every settings file |
 | `TelegramNotify.cs` | Alerts to a Telegram chat |
 | `ProductInfo.cs`, `AllegroSettings.cs` | Shared models |
@@ -134,7 +145,8 @@ gitignored, because these files hold real credentials and tokens.
 | `last_parse.txt` | Resume point for an interrupted parse |
 | `products_dictionary.txt` | The parsed catalogue — the single source every step reads |
 | `bundles.txt` | Which EANs are listed as packs, and of what size |
-| `unlisted.txt`, `known_unlisted.txt` | Products with no offer, and the ones already acknowledged |
+| `card_lookups.txt` | Catalogue cards found per EAN, so scans do not look them up again |
+| `content_drafts.txt` | Generated titles and descriptions and whether they were applied |
 | `offer_backups/` | Each offer as it was before the converter rewrote it |
 
 Files are created with defaults on first access, so a fresh checkout starts

@@ -329,8 +329,6 @@ public class AllegroPublisher
             }
         }
 
-        new UnlistedTracker().Record(unlisted);
-
         log?.Invoke($"Publish finished: {updated} updated, {unchanged} unchanged, {frozen} with a frozen price, " +
                     $"{skipped} skipped, {failed} failed. {unlisted.Count} sellable products have no offer.");
         return updated;
