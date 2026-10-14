@@ -311,7 +311,7 @@ public class AllegroPublisher
                 else if (offer.IsActive)
                 {
                     await SetOfferActiveAsync(offerId, false);
-                    log?.Invoke($"Ended offer {offerId} (EAN {row.Ean}) - below the stock threshold.");
+                    log?.Invoke($"Ended offer {offerId} (EAN {row.Ean}) - out of stock or no longer passes the listing options.");
                 }
                 else
                 {

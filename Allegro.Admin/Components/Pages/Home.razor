@@ -471,6 +471,22 @@
                     </div>
                 </div>
 
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input id="aiCheckInput" class="form-check-input" type="checkbox" @bind="_listingOptions.AiCheckNewOffers" />
+                        <label class="form-check-label" for="aiCheckInput">Check new products with AI before listing</label>
+                    </div>
+                    <label class="form-label mt-2" for="forbiddenGoodsInput">Goods that must not be listed</label>
+                    <textarea id="forbiddenGoodsInput" class="form-control" rows="5" @bind="_listingOptions.ForbiddenGoods"></textarea>
+                    <div class="form-text">
+                        Right before an offer is created - automatically or with Create selected - AI reads the product's
+                        name, description and categories and checks it against this list. When in doubt it holds the
+                        product back; the reason is written to the log. Scanning does not call AI.
+                        Each product is checked once; editing this list checks everything again.
+                        <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => _listingOptions.ForbiddenGoods = ListingOptions.DefaultForbiddenGoods">Restore default list</button>
+                    </div>
+                </div>
+
                 <h6 class="fw-semibold">Products with no offer</h6>
                 <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
                     <button class="btn btn-outline-secondary" disabled="@(!allegro.Settings.IsConnected || _isScanningUnlisted)" @onclick="ScanUnlisted">
@@ -816,11 +832,13 @@
             var result = await allegro.CreateOffersAsync(todo);
             if (result.Failed > 0)
             {
-                toastService.ShowError($"{result.Created} created, {result.Failed} failed - see the log below.");
+                toastService.ShowError($"{result.Created} created, {result.Forbidden} forbidden, {result.Failed} failed - see the log below.");
             }
             else
             {
-                toastService.ShowSuccess($"{result.Created} offer(s) created on Allegro.");
+                toastService.ShowSuccess(result.Forbidden > 0
+                    ? $"{result.Created} offer(s) created, {result.Forbidden} held back as forbidden - see the log below."
+                    : $"{result.Created} offer(s) created on Allegro.");
             }
             _unlisted = await allegro.PlanNewOffersAsync();
             _createSelected.IntersectWith(_unlisted.Where(c => c.CanCreate).Select(c => c.Product.EAN));

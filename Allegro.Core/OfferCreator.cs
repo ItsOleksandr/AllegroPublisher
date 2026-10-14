@@ -14,6 +14,7 @@ public sealed class OfferCreator
     private const int LookupParallelism = 6;
 
     private static readonly ConcurrentDictionary<string, List<string>> UnhandledOfferParameters = new();
+    private static readonly ConcurrentDictionary<string, string> CategoryNames = new();
 
     private readonly AllegroPublisher _publisher;
 
@@ -29,7 +30,7 @@ public sealed class OfferCreator
         public bool CanCreate => Problem is null;
     }
 
-    public record Result(int Created, int Failed);
+    public record Result(int Created, int Failed, int Forbidden = 0);
 
     public async Task<List<Candidate>> PlanAsync(Action<string>? log = null)
     {
@@ -127,6 +128,42 @@ public sealed class OfferCreator
         return candidates;
     }
 
+    private async Task<Dictionary<string, ProductCheck>> PolicyCheckAsync(List<Candidate> candidates, ListingOptions options, Action<string>? log)
+    {
+        var items = new List<ProductPolicyCheck.Item>();
+        foreach (var candidate in candidates)
+        {
+            items.Add(new ProductPolicyCheck.Item(candidate.Product, await CategoryNameAsync(candidate.CategoryId!)));
+        }
+
+        try
+        {
+            return await new ProductPolicyCheck().CheckAsync(items, options.ForbiddenGoods, log);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            log?.Invoke($"AI check is not available: {e.Message} - no new offer is created this time.");
+            return new Dictionary<string, ProductCheck>();
+        }
+    }
+
+    private async Task<string?> CategoryNameAsync(string categoryId)
+    {
+        if (CategoryNames.TryGetValue(categoryId, out var cached))
+        {
+            return cached;
+        }
+
+        var (status, body) = await _publisher.GetRawAsync($"/sale/categories/{Uri.EscapeDataString(categoryId)}");
+        if (status is < 200 or >= 300)
+        {
+            return null;
+        }
+        var name = JsonNode.Parse(body)?["name"]?.ToString() ?? "";
+        CategoryNames[categoryId] = name;
+        return name;
+    }
+
     private async Task<List<string>> UnhandledOfferParametersAsync(string categoryId)
     {
         if (UnhandledOfferParameters.TryGetValue(categoryId, out var cached))
@@ -189,10 +226,28 @@ public sealed class OfferCreator
         }
 
         var registry = SaverExtensions.Bundles.Read();
+        var todo = candidates.Where(c => c.CanCreate).ToList();
+        var verdicts = options.AiCheckNewOffers ? await PolicyCheckAsync(todo, options, log) : null;
 
-        int created = 0, failed = 0;
-        foreach (var candidate in candidates.Where(c => c.CanCreate))
+        int created = 0, failed = 0, forbidden = 0;
+        foreach (var candidate in todo)
         {
+            if (verdicts is not null)
+            {
+                if (!verdicts.TryGetValue(candidate.Product.EAN, out var verdict))
+                {
+                    failed++;
+                    log?.Invoke($"  {candidate.Product.EAN}: the AI check did not answer - not created, will retry next time.");
+                    continue;
+                }
+                if (!verdict.Allowed)
+                {
+                    forbidden++;
+                    log?.Invoke($"  {candidate.Product.EAN}: not created, forbidden by the AI check - {verdict.Reason}");
+                    continue;
+                }
+            }
+
             try
             {
                 var card = await GetJsonAsync($"/sale/products/{candidate.ProductId}");
@@ -228,8 +283,8 @@ public sealed class OfferCreator
 
         SaverExtensions.Bundles.Value = registry;
         SaverExtensions.Bundles.Write();
-        log?.Invoke($"Created {created} offers, {failed} failed.");
-        return new Result(created, failed);
+        log?.Invoke($"Created {created} offers, {forbidden} forbidden by the AI check, {failed} failed.");
+        return new Result(created, failed, forbidden);
     }
 
     private JsonObject BuildPayload(JsonNode template, JsonNode card, Candidate candidate, ListingOptions options)

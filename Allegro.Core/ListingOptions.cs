@@ -8,6 +8,15 @@ public class ListingOptions
     public int StaleAfterHours { get; set; } = 48;
     public string NewOfferTemplateId { get; set; } = "";
     public bool AutoCreateOffers { get; set; } = true;
+    public bool AiCheckNewOffers { get; set; } = true;
+    public string ForbiddenGoods { get; set; } = DefaultForbiddenGoods;
+
+    public const string DefaultForbiddenGoods =
+        "- elektronika i sprzęt elektryczny: wszystko, co działa z sieci, na baterie, akumulator lub USB " +
+        "(np. latarki, lampki, oświetlenie LED, girlandy, detektory, kamery, zegarki i zabawki na baterie, wentylatory);\n" +
+        "- oświetlenie każdego rodzaju, także świecące elementy i produkty z diodami LED;\n" +
+        "- telefony, komputery i akcesoria z elektroniką (ładowarki, kable, powerbanki, słuchawki, głośniki);\n" +
+        "- baterie i akumulatory.";
     public int AutoContentPerRun { get; set; } = 50;
     public string NewOfferSafetyText { get; set; } = "";
 
