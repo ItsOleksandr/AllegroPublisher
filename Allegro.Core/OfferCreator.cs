@@ -10,6 +10,7 @@ public sealed class OfferCreator
 {
     private const string EanParameterId = "225693";
     private const string ConditionParameterId = "11323";
+    private const string HandlingTime = "P2D";
     private const int MaxImages = 16;
     private const int LookupParallelism = 6;
 
@@ -342,7 +343,7 @@ public sealed class OfferCreator
             ["delivery"] = new JsonObject
             {
                 ["shippingRates"] = Copy(template["delivery"]?["shippingRates"]),
-                ["handlingTime"] = Copy(template["delivery"]?["handlingTime"]),
+                ["handlingTime"] = HandlingTime,
             },
             ["afterSalesServices"] = Copy(template["afterSalesServices"]),
             ["payments"] = Copy(template["payments"]),
