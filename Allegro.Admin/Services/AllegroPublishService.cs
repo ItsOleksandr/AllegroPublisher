@@ -56,6 +56,24 @@ public class AllegroPublishService
     public Task<int> EndOffersAsync(IEnumerable<string> offerIds) =>
         _publisher.EndOffersAsync(offerIds, Log);
 
+    public async Task<int> SetHandlingTimeAsync()
+    {
+        if (IsGenerating || IsPublishing)
+        {
+            throw new InvalidOperationException("Another job is already running.");
+        }
+
+        IsPublishing = true;
+        try
+        {
+            return await _publisher.SetHandlingTimeAsync(OfferCreator.HandlingTime, Log);
+        }
+        finally
+        {
+            IsPublishing = false;
+        }
+    }
+
     public Task<List<BundlePlan.BundleChange>> BuildBundlePlanAsync() =>
         new BundlePlan(_publisher).BuildAsync(Log);
 

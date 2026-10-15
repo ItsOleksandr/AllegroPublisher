@@ -382,6 +382,20 @@
 
                 <hr />
 
+                <h6 class="fw-semibold">Handling time</h6>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                    <button class="btn btn-outline-primary" disabled="@(!allegro.Settings.IsConnected || allegro.IsPublishing)" @onclick="SetHandlingTime">
+                        @(allegro.IsPublishing ? "Working..." : "Set handling time to 2 days")
+                    </button>
+                </div>
+                <div class="form-text mb-3">
+                    Sets <strong>handling time = 2 days</strong> on every offer listed by this app (external ID is an EAN
+                    from the parsed catalogue), whatever its status. Offers listed manually or by another tool are not touched.
+                    New offers are created with 2 days already.
+                </div>
+
+                <hr />
+
                 <h6 class="fw-semibold">Sell as packs</h6>
                 <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
                     <button class="btn btn-outline-secondary" disabled="@(!allegro.Settings.IsConnected || _isPlanningBundles)" @onclick="BuildBundlePlan">
@@ -931,6 +945,19 @@
         finally
         {
             _isEndingOrphans = false;
+        }
+    }
+
+    private async Task SetHandlingTime()
+    {
+        try
+        {
+            var updated = await allegro.SetHandlingTimeAsync();
+            toastService.ShowSuccess($"Handling time set on {updated} offer(s).");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
         }
     }
 

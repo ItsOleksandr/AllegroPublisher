@@ -10,7 +10,7 @@ public sealed class OfferCreator
 {
     private const string EanParameterId = "225693";
     private const string ConditionParameterId = "11323";
-    private const string HandlingTime = "P2D";
+    public const string HandlingTime = "P2D";
     private const int MaxImages = 16;
     private const int LookupParallelism = 6;
 

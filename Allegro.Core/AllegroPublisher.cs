@@ -486,12 +486,133 @@ public class AllegroPublisher
 
         var orphans = new List<OrphanOffer>();
         int total = 0, foreign = 0, unknown = 0;
-        const int limit = 100;
+
+        foreach (var offer in await ListOffersAsync("ACTIVE"))
+        {
+            total++;
+            var ean = offer.External?.Id ?? "";
+
+            // No external id => listed manually or by another tool. None of our business.
+            if (string.IsNullOrEmpty(ean))
+            {
+                foreign++;
+                continue;
+            }
+
+            // Never parsed => we have no grounds to judge it, so leave it alone.
+            if (!productByEan.TryGetValue(ean, out var product))
+            {
+                unknown++;
+                continue;
+            }
+
+            if (!options.Includes(product))
+            {
+                orphans.Add(new OrphanOffer(offer.Id, ean, offer.Name, ExplainRejection(product, options)));
+            }
+        }
+
+        log?.Invoke($"Scanned {total} active offers — {foreign} not listed by this app, {unknown} not in the " +
+                    $"parsed catalogue (both left alone), {orphans.Count} no longer pass the listing options.");
+        return orphans;
+    }
+
+    public async Task<int> SetHandlingTimeAsync(string handlingTime, Action<string>? log = null)
+    {
+        await EnsureValidTokenAsync();
+
+        var parsedEans = SaverExtensions.Products.Read().Values
+            .Select(p => p.EAN)
+            .Where(ean => !string.IsNullOrEmpty(ean))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var offers = await ListOffersAsync(null);
+        var ours = offers
+            .Where(o => !string.IsNullOrEmpty(o.Id) && parsedEans.Contains(o.External?.Id ?? ""))
+            .Select(o => o.Id)
+            .Distinct()
+            .ToList();
+        log?.Invoke($"Scanned {offers.Count} offers, {ours.Count} of them are listed by this app - " +
+                    $"setting their handling time to {handlingTime}.");
+
+        int succeeded = 0, failed = 0;
+        const int batchSize = 1000;
+        for (int i = 0; i < ours.Count; i += batchSize)
+        {
+            var batch = ours.Skip(i).Take(batchSize).ToList();
+            var commandId = Guid.NewGuid().ToString();
+            var payload = new
+            {
+                modification = new { delivery = new { handlingTime } },
+                offerCriteria = new[]
+                {
+                    new { type = "CONTAINS_OFFERS", offers = batch.Select(id => new { id }).ToArray() },
+                },
+            };
+            await SendCommandAsync($"{ApiBase}/sale/offer-modification-commands/{commandId}", payload, "handling time");
+
+            var (ok, bad) = await WaitForModificationAsync(commandId, batch.Count, log);
+            succeeded += ok;
+            failed += bad;
+        }
+
+        log?.Invoke($"Handling time set to {handlingTime} on {succeeded} offers, {failed} failed.");
+        return succeeded;
+    }
+
+    private async Task<(int Succeeded, int Failed)> WaitForModificationAsync(string commandId, int expected, Action<string>? log)
+    {
+        int success = 0, failed = 0;
+        for (int attempt = 0; attempt < 60; attempt++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            var (status, body) = await GetRawAsync($"/sale/offer-modification-commands/{commandId}");
+            if (status is < 200 or >= 300)
+            {
+                continue;
+            }
+
+            var count = JsonNode.Parse(body)?["taskCount"];
+            success = count?["success"]?.GetValue<int>() ?? 0;
+            failed = count?["failed"]?.GetValue<int>() ?? 0;
+            if (success + failed >= expected)
+            {
+                break;
+            }
+        }
+
+        if (failed > 0)
+        {
+            var (status, body) = await GetRawAsync($"/sale/offer-modification-commands/{commandId}/tasks?limit=1000");
+            if (status is >= 200 and < 300)
+            {
+                foreach (var task in JsonNode.Parse(body)?["tasks"]?.AsArray() ?? new JsonArray())
+                {
+                    if (task?["status"]?.ToString() == "FAIL")
+                    {
+                        var message = task["message"]?.ToString() ?? task["errors"]?.ToJsonString() ?? "";
+                        log?.Invoke($"Failed offer {task["offer"]?["id"]}: {message}");
+                    }
+                }
+            }
+        }
+        else if (success < expected)
+        {
+            log?.Invoke($"Command {commandId}: {success} of {expected} offers confirmed so far, the rest is still processing on Allegro.");
+        }
+
+        return (success, failed);
+    }
+
+    private async Task<List<OfferListItem>> ListOffersAsync(string? publicationStatus)
+    {
+        var result = new List<OfferListItem>();
+        var filter = publicationStatus is null ? "" : $"publication.status={publicationStatus}&";
+        const int limit = 1000;
 
         for (int offset = 0; ; offset += limit)
         {
-            var request = CreateApiRequest(HttpMethod.Get,
-                $"{ApiBase}/sale/offers?publication.status=ACTIVE&limit={limit}&offset={offset}");
+            var request = CreateApiRequest(HttpMethod.Get, $"{ApiBase}/sale/offers?{filter}limit={limit}&offset={offset}");
             var response = await _http.SendAsync(request);
             var body = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode)
@@ -500,45 +621,14 @@ public class AllegroPublisher
             }
 
             var offers = JsonSerializer.Deserialize<OffersListResponse>(body)?.Offers ?? new List<OfferListItem>();
-            if (offers.Count == 0)
-            {
-                break;
-            }
-
-            total += offers.Count;
-            foreach (var offer in offers)
-            {
-                var ean = offer.External?.Id ?? "";
-
-                // No external id => listed manually or by another tool. None of our business.
-                if (string.IsNullOrEmpty(ean))
-                {
-                    foreign++;
-                    continue;
-                }
-
-                // Never parsed => we have no grounds to judge it, so leave it alone.
-                if (!productByEan.TryGetValue(ean, out var product))
-                {
-                    unknown++;
-                    continue;
-                }
-
-                if (!options.Includes(product))
-                {
-                    orphans.Add(new OrphanOffer(offer.Id, ean, offer.Name, ExplainRejection(product, options)));
-                }
-            }
-
+            result.AddRange(offers);
             if (offers.Count < limit)
             {
                 break;
             }
         }
 
-        log?.Invoke($"Scanned {total} active offers — {foreign} not listed by this app, {unknown} not in the " +
-                    $"parsed catalogue (both left alone), {orphans.Count} no longer pass the listing options.");
-        return orphans;
+        return result;
     }
 
     private static string ExplainRejection(ProductInfo product, ListingOptions options)
