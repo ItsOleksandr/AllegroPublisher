@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "Allegro.Admin", "--launch-profile", "http"],
+      "port": 5101
+    }
+  ]
+}

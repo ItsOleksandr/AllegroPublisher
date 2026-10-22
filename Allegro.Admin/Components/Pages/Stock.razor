@@ -1,0 +1,812 @@
+@page "/stock"
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@inject ToastService toastService
+@inject AllegroPublishService allegro
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+<PageTitle>My stock · Allegro parser</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <h1 class="mb-0">My stock</h1>
+    <div class="d-flex align-items-center flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" href="/">← Back to dashboard</a>
+        <form action="/auth/logout" method="post" class="m-0">
+            <button class="btn btn-outline-danger" type="submit">Logout</button>
+        </form>
+    </div>
+</div>
+
+<div class="row text-center g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold">@_rows.Count(r => r.Item.Quantity > 0)</div>
+            <div class="text-muted small">Products in stock</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold">@_rows.Sum(r => r.Item.Quantity)</div>
+            <div class="text-muted small">Units in stock</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold text-primary">@_rows.Count(r => r.Plan.FromOwnStock && r.Plan.Count > 0)</div>
+            <div class="text-muted small">Sold from own stock</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold text-warning">@_rows.Count(r => r.Plan.Warning is not null && r.Item.Quantity > 0)</div>
+            <div class="text-muted small">With a warning</div>
+        </div></div>
+    </div>
+</div>
+
+<div class="alert alert-info py-2 mb-4">
+    <strong>Everything here is per piece.</strong> Enter how many single pieces lie on the shelf and the net purchase price
+    of one piece. Packs are worked out by the program: a product sold as a pack of 10 with 25 pieces in stock is listed
+    as 2 packs, priced for 10 pieces.
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header fw-semibold">Add a product</div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-12 col-lg-6">
+                <label class="form-label" for="addSearch">Find in the supplier catalogue</label>
+                <input id="addSearch" class="form-control" type="search" placeholder="Type a name or EAN…" @bind="_addSearch" @bind:event="oninput" />
+                @if (_addSearch.Trim().Length >= 3 && _picked is null)
+                {
+                    var matches = AddMatches.ToList();
+                    <div class="list-group mt-2" style="max-height: 320px; overflow: auto">
+                        @foreach (var product in matches)
+                        {
+                            <button type="button" class="list-group-item list-group-item-action py-2" @onclick="() => Pick(product)">
+                                <div class="fw-semibold">@product.Name</div>
+                                <div class="small text-muted">
+                                    <code>@product.EAN</code> · supplier: @SupplierStatus(product).Label · @product.Price.ToString("0.00", CultureInfo.InvariantCulture) per piece
+                                    @if (_options.GetPackSize(product) > 1)
+                                    {
+                                        <span> · sold as packs of @_options.GetPackSize(product)</span>
+                                    }
+                                </div>
+                            </button>
+                        }
+                        @if (matches.Count == 0)
+                        {
+                            <div class="list-group-item text-muted">
+                                Nothing found.
+                                @if (OwnStock.IsValidEan(_addSearch.Trim()))
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-secondary ms-2" @onclick="PickNew">Add EAN @_addSearch.Trim() as a product of my own</button>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="col-12 col-lg-6">
+                @if (_picked is null)
+                {
+                    <div class="text-muted small mt-lg-4 pt-lg-2">Pick a product on the left, then enter pieces and the cost of one piece.</div>
+                }
+                else
+                {
+                    <div class="border rounded p-3">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div>
+                                @if (_picked.Product is not null)
+                                {
+                                    <div class="fw-semibold">@_picked.Product.Name</div>
+                                }
+                                else
+                                {
+                                    <input class="form-control form-control-sm mb-1" placeholder="Product name" @bind="_picked.Name" />
+                                }
+                                <div class="small text-muted">
+                                    <code>@_picked.Ean</code>
+                                    @if (_picked.Existing is not null)
+                                    {
+                                        <span> · already in stock: @_picked.Existing.Quantity pcs</span>
+                                    }
+                                </div>
+                            </div>
+                            <button type="button" class="btn-close" aria-label="Clear" @onclick="() => _picked = null"></button>
+                        </div>
+                        @if (_picked.Pack > 1)
+                        {
+                            <div class="small text-primary mt-2">Sold on Allegro as packs of @_picked.Pack. Enter pieces anyway: @_picked.Quantity pcs = @(_picked.Quantity / _picked.Pack) pack(s).</div>
+                        }
+                        <div class="row g-2 mt-1">
+                            <div class="col-6">
+                                <label class="form-label mb-1" for="addQty">Pieces on the shelf</label>
+                                <input id="addQty" class="form-control" type="number" min="0" @bind="_picked.Quantity" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label mb-1" for="addCost">Net cost of one piece</label>
+                                <input id="addCost" class="form-control" type="number" min="0" step="0.01" @bind="_picked.UnitCost" />
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 mt-3">
+                            <button class="btn btn-primary" disabled="@(Busy || _picked.Quantity <= 0)" @onclick="AddPicked">
+                                @(_picked.Existing is null ? "Add to stock" : $"Add {_picked.Quantity} pcs (total {_picked.Existing.Quantity + _picked.Quantity})")
+                            </button>
+                            @if (_picked.Existing is not null)
+                            {
+                                <button class="btn btn-outline-primary" disabled="@Busy" @onclick="SetPicked">Set stock to @_picked.Quantity pcs</button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header fw-semibold">Import a list</div>
+    <div class="card-body">
+        <p class="text-muted small mb-2">
+            One product per line: <code>EAN quantity</code> or <code>EAN quantity cost</code>, separated by a space, comma,
+            semicolon or tab, so a spreadsheet column pair can be pasted as is. Quantity is pieces, cost is the net price
+            of one piece.
+        </p>
+        <div class="row g-3">
+            <div class="col-12 col-lg-6">
+                <textarea class="form-control font-monospace" rows="8" placeholder="@ImportPlaceholder" @bind="_importText"></textarea>
+            </div>
+            <div class="col-12 col-lg-6">
+                <label class="form-label" for="importMode">What the quantity means</label>
+                <select id="importMode" class="form-select mb-3" @bind="_mode">
+                    <option value="set">Set the stock to this quantity (first fill, stock count)</option>
+                    <option value="add">Add this quantity to the current stock</option>
+                </select>
+                <div class="form-check mb-3">
+                    <input id="pushAfterSave" class="form-check-input" type="checkbox" @bind="_pushAfterSave" />
+                    <label class="form-check-label" for="pushAfterSave">After saving, push these products to Allegro</label>
+                    <div class="form-text">
+                        Updates quantity and price, re-activates ended offers and creates missing ones (needs the template offer).
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-outline-primary" disabled="@string.IsNullOrWhiteSpace(_importText)" @onclick="Preview">Preview</button>
+                    <button class="btn btn-primary" disabled="@(!CanSaveImport || Busy)" @onclick="SaveImport">
+                        @(_isSaving ? "Saving..." : $"Save {(_preview?.Count(r => r.Ok) ?? 0)} products")
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (_preview is not null)
+        {
+            <div class="table-responsive mt-3">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Line</th>
+                            <th>Code</th>
+                            <th>Product found</th>
+                            <th>Supplier</th>
+                            <th class="text-end">Pieces now</th>
+                            <th class="text-end">Pieces after</th>
+                            <th class="text-end">Packs listed</th>
+                            <th class="text-end">Cost / piece</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _preview)
+                        {
+                            <tr class="@(row.Ok ? "" : "table-danger")">
+                                <td class="text-muted">@row.Line.Number</td>
+                                <td><code>@row.Line.Code</code></td>
+                                <td>
+                                    @if (row.Product is not null)
+                                    {
+                                        <a href="@row.Product.Url" target="_blank" rel="noreferrer" class="text-decoration-none">@row.Product.Name</a>
+                                    }
+                                    else if (row.Item is not null && row.Item.Name.Length > 0)
+                                    {
+                                        <span>@row.Item.Name</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">—</span>
+                                    }
+                                </td>
+                                <td>
+                                    @{ var supplier = SupplierStatus(row.Product); }
+                                    <span class="badge @supplier.Css">@supplier.Label</span>
+                                </td>
+                                <td class="text-end">@(row.Item?.Quantity ?? 0)</td>
+                                <td class="text-end fw-semibold">@row.NewQuantity</td>
+                                <td class="text-end">@PacksLabel(row.Product, row.NewQuantity)</td>
+                                <td class="text-end">@(row.Line.UnitCost?.ToString("0.00", CultureInfo.InvariantCulture) ?? row.Item?.UnitCost?.ToString("0.00", CultureInfo.InvariantCulture) ?? "—")</td>
+                                <td>
+                                    <span class="badge @row.Css">@row.Status</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@if (_pushResult is not null)
+{
+    <div class="alert @(_pushResult.Failed > 0 ? "alert-warning" : "alert-success") py-2">
+        Pushed to Allegro: @_pushResult.Updated offers updated, @_pushResult.Created created,
+        @_pushResult.Forbidden forbidden by the AI check, @_pushResult.Failed failed.
+        @if (_pushResult.NotCreated.Count > 0)
+        {
+            <ul class="mb-0 mt-1 small">
+                @foreach (var c in _pushResult.NotCreated)
+                {
+                    <li><code>@c.Product.EAN</code> has no offer and none was created: @c.Problem</li>
+                }
+            </ul>
+        }
+    </div>
+}
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-semibold">Stock</span>
+        <div class="d-flex align-items-center flex-wrap gap-2">
+            <input class="form-control form-control-sm" style="max-width: 260px"
+                   type="search" placeholder="Search name, EAN…" @bind="_search" @bind:event="oninput" />
+            <button class="btn btn-sm btn-outline-secondary" disabled="@(!allegro.Settings.IsConnected || Busy || _rows.Count == 0)" @onclick="CheckOffers">
+                @(_isChecking ? "Checking..." : "Check Allegro offers")
+            </button>
+            <button class="btn btn-sm btn-success" disabled="@(!allegro.Settings.IsConnected || Busy || !_rows.Any(r => r.Item.Quantity > 0))" @onclick="PushAll">
+                @(allegro.IsPublishing ? "Pushing..." : "Push own stock to Allegro")
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        @if (_rows.Count == 0)
+        {
+            <div class="p-4 text-center text-muted">Nothing in stock yet. Import quantities above.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Product</th>
+                            <th style="width: 110px">Pieces</th>
+                            <th style="width: 130px">Cost / piece</th>
+                            <th>Supplier</th>
+                            <th>Offer</th>
+                            <th>Allegro</th>
+                            <th>Updated</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in FilteredRows)
+                        {
+                            var supplier = SupplierStatus(row.Product);
+                            var offer = OfferStatus(row.Item.Ean);
+                            <tr class="@(row.Item.Quantity == 0 ? "text-muted" : "")">
+                                <td>
+                                    @if (row.Product is not null)
+                                    {
+                                        <a href="@row.Product.Url" target="_blank" rel="noreferrer" class="fw-semibold text-decoration-none">@row.Product.Name</a>
+                                    }
+                                    else
+                                    {
+                                        <input class="form-control form-control-sm" placeholder="Name (not in the supplier catalogue)" @bind="row.Name" />
+                                    }
+                                    <div class="small"><code>@row.Item.Ean</code>
+                                        @if (row.Plan.Pack > 1)
+                                        {
+                                            <span class="text-muted">· packs of @row.Plan.Pack → @(row.Item.Quantity / row.Plan.Pack) pack(s) from @row.Item.Quantity pcs</span>
+                                        }
+                                    </div>
+                                </td>
+                                <td><input class="form-control form-control-sm" type="number" min="0" @bind="row.Quantity" /></td>
+                                <td><input class="form-control form-control-sm" type="number" min="0" step="0.01" @bind="row.UnitCost" /></td>
+                                <td><span class="badge @supplier.Css">@supplier.Label</span></td>
+                                <td>
+                                    @if (row.Plan.Count > 0)
+                                    {
+                                        <span class="badge @(row.Plan.FromOwnStock ? "bg-primary" : "bg-success")">
+                                            @(row.Plan.FromOwnStock ? "own stock" : "supplier") · @row.Plan.Count @(row.Plan.Pack > 1 ? $"packs of {row.Plan.Pack}" : "pcs") × @row.Plan.Price.ToString("0.00", CultureInfo.InvariantCulture)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary">not sold</span>
+                                    }
+                                    @if (row.Plan.Warning is not null)
+                                    {
+                                        <div class="small text-warning">@row.Plan.Warning</div>
+                                    }
+                                </td>
+                                <td><span class="badge @offer.Css">@offer.Label</span></td>
+                                <td class="small text-nowrap">@(row.Item.UpdatedAt == DateTime.MinValue ? "—" : row.Item.UpdatedAt.ToString("yyyy-MM-dd HH:mm"))</td>
+                                <td class="text-end text-nowrap">
+                                    <button class="btn btn-sm btn-outline-primary" disabled="@(!row.IsDirty || Busy)" @onclick="() => SaveRow(row)">Save</button>
+                                    @if (_confirmRemove == row.Item.Ean)
+                                    {
+                                        <button class="btn btn-sm btn-danger ms-1" disabled="@Busy" @onclick="() => RemoveRow(row)">Really remove</button>
+                                        <button class="btn btn-sm btn-outline-secondary ms-1" @onclick="() => _confirmRemove = null">Keep</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-outline-danger ms-1" disabled="@Busy" @onclick="() => _confirmRemove = row.Item.Ean">Remove</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-semibold">Stock moves</span>
+        <button class="btn btn-sm btn-outline-danger" disabled="@(Busy || _moves.LastOrDefault() is not { Delta: not 0 } || _moves[^1].Reason == StockReason.Rollback)" @onclick="UndoLast">Undo last move</button>
+    </div>
+    <div class="card-body p-0">
+        @if (_moves.Count == 0)
+        {
+            <div class="p-4 text-center text-muted">No moves yet.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>When</th>
+                            <th>Product</th>
+                            <th class="text-end">Change</th>
+                            <th class="text-end">After</th>
+                            <th>Reason</th>
+                            <th>Order</th>
+                            <th>Note</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var move in _moves.AsEnumerable().Reverse().Take(100))
+                        {
+                            <tr>
+                                <td class="text-nowrap small">@move.At.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>
+                                    <span>@ProductName(move.Ean)</span>
+                                    <div class="small"><code>@move.Ean</code></div>
+                                </td>
+                                <td class="text-end fw-semibold @(move.Delta < 0 ? "text-danger" : "text-success")">@move.Delta.ToString("+#;-#;0")</td>
+                                <td class="text-end">@move.After</td>
+                                <td><span class="badge bg-light text-dark border">@move.Reason</span></td>
+                                <td><code>@move.OrderId</code></td>
+                                <td class="small text-muted">@move.Note</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@if (_showLog)
+{
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold">Allegro log</div>
+        <div class="card-body p-0">
+            <pre class="mb-0 p-3 small" style="max-height: 320px; overflow: auto">@string.Join('\n', allegro.Logs.TakeLast(60))</pre>
+        </div>
+    </div>
+}
+
+@code {
+    private ListingOptions _options = new();
+    private Dictionary<string, ProductInfo> _byEan = new(StringComparer.OrdinalIgnoreCase);
+    private List<RowVm> _rows = new();
+    private List<StockMove> _moves = new();
+    private Dictionary<string, BundlePlan.OfferSnapshot>? _offers;
+    private List<PreviewRow>? _preview;
+    private AllegroPublishService.StockPushResult? _pushResult;
+
+    private string _importText = "";
+    private string _addSearch = "";
+    private string? _confirmRemove;
+    private Picked? _picked;
+
+    private sealed class Picked
+    {
+        public required string Ean { get; init; }
+        public ProductInfo? Product { get; init; }
+        public OwnStockItem? Existing { get; init; }
+        public int Pack { get; init; } = 1;
+        public string Name { get; set; } = "";
+        public int Quantity { get; set; } = 1;
+        public decimal? UnitCost { get; set; }
+    }
+
+    private IEnumerable<ProductInfo> AddMatches
+    {
+        get
+        {
+            var term = _addSearch.Trim();
+            var words = term.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return _byEan.Values
+                .Where(p => p.EAN.Contains(term, StringComparison.OrdinalIgnoreCase)
+                            || words.All(w => p.Name.Contains(w, StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(p => p.EAN.Equals(term, StringComparison.OrdinalIgnoreCase))
+                .ThenBy(p => p.Name)
+                .Take(15);
+        }
+    }
+
+    private void Pick(ProductInfo product)
+    {
+        OwnStock.Items().TryGetValue(product.EAN, out var existing);
+        _picked = new Picked
+        {
+            Ean = product.EAN,
+            Product = product,
+            Existing = existing,
+            Pack = _options.GetPackSize(product),
+            Name = product.Name,
+            UnitCost = existing?.UnitCost ?? (product.Price > 0 ? product.Price : null),
+        };
+    }
+
+    private void PickNew()
+    {
+        var ean = _addSearch.Trim();
+        OwnStock.Items().TryGetValue(ean, out var existing);
+        _picked = new Picked { Ean = ean, Existing = existing, Name = existing?.Name ?? "", UnitCost = existing?.UnitCost };
+    }
+
+    private void AddPicked() => SavePicked(add: true);
+
+    private void SetPicked() => SavePicked(add: false);
+
+    private void SavePicked(bool add)
+    {
+        if (_picked is null)
+        {
+            return;
+        }
+        try
+        {
+            if (add)
+            {
+                OwnStock.Adjust(_picked.Ean, _picked.Quantity, StockReason.Manual, note: "added by hand", unitCost: _picked.UnitCost, name: _picked.Name);
+            }
+            else
+            {
+                OwnStock.Set(_picked.Ean, _picked.Quantity, StockReason.Correction, note: "set by hand", unitCost: _picked.UnitCost, name: _picked.Name);
+            }
+            toastService.ShowSuccess($"{_picked.Name}: {_picked.Quantity} pcs saved.");
+            _picked = null;
+            _addSearch = "";
+            _pushResult = null;
+            Load();
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+    }
+
+    private string PacksLabel(ProductInfo? product, int pieces)
+    {
+        if (product is null)
+        {
+            return pieces.ToString();
+        }
+        var pack = _options.GetPackSize(product);
+        return pack > 1 ? $"{pieces / pack} × {pack} pcs" : pieces.ToString();
+    }
+    private string _mode = "set";
+    private bool SetMode => _mode == "set";
+    private const string ImportPlaceholder = "5904734418917;3\n5904734402367;12;4.50";
+    private bool _pushAfterSave = true;
+    private string _search = "";
+    private bool _isSaving;
+    private bool _isChecking;
+    private bool _showLog;
+
+    private bool Busy => _isSaving || _isChecking || allegro.IsPublishing || allegro.IsGenerating;
+
+    private sealed class RowVm
+    {
+        public required OwnStockItem Item { get; init; }
+        public ProductInfo? Product { get; init; }
+        public required PlannedListing Plan { get; init; }
+        public int Quantity { get; set; }
+        public decimal? UnitCost { get; set; }
+        public string Name { get; set; } = "";
+
+        public bool IsDirty => Quantity != Item.Quantity || UnitCost != Item.UnitCost || Name != Item.Name;
+    }
+
+    private sealed record PreviewRow(OwnStock.ImportLine Line, ProductInfo? Product, OwnStockItem? Item, int NewQuantity, bool Ok, string Status, string Css);
+
+    protected override void OnInitialized() => Load();
+
+    private void Load()
+    {
+        _options = SaverExtensions.ListingOptions.Read();
+        _byEan = StockPlanner.ProductsByEan(SaverExtensions.Products.Read().Values);
+        _moves = OwnStock.Moves();
+        _rows = OwnStock.Items().Values
+            .OrderByDescending(i => i.Quantity > 0)
+            .ThenByDescending(i => i.UpdatedAt)
+            .Select(item =>
+            {
+                _byEan.TryGetValue(item.Ean, out var product);
+                var plan = StockPlanner.Plan(product ?? StockPlanner.Placeholder(item), _options, product is not null && _options.IsStale(product), item);
+                return new RowVm
+                {
+                    Item = item,
+                    Product = product,
+                    Plan = plan,
+                    Quantity = item.Quantity,
+                    UnitCost = item.UnitCost,
+                    Name = item.Name,
+                };
+            })
+            .ToList();
+    }
+
+    private IEnumerable<RowVm> FilteredRows
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_search))
+            {
+                return _rows;
+            }
+            var term = _search.Trim();
+            return _rows.Where(r =>
+                r.Item.Ean.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                (r.Product?.Name.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                r.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private string ProductName(string ean) =>
+        _byEan.TryGetValue(ean, out var product) ? product.Name
+        : _rows.FirstOrDefault(r => r.Item.Ean == ean)?.Item.Name is { Length: > 0 } name ? name
+        : "—";
+
+    private (string Label, string Css) SupplierStatus(ProductInfo? product)
+    {
+        if (product is null)
+        {
+            return ("not in catalogue", "bg-secondary");
+        }
+        if (product.Count <= 0)
+        {
+            return ("brak", "bg-danger");
+        }
+        if (_options.IsStale(product))
+        {
+            return ($"stale · {product.Count}", "bg-warning text-dark");
+        }
+        return ($"{product.Count} in stock", "bg-success");
+    }
+
+    private (string Label, string Css) OfferStatus(string ean)
+    {
+        if (_offers is null)
+        {
+            return ("not checked", "bg-light text-muted border");
+        }
+        if (!_offers.TryGetValue(ean, out var offer))
+        {
+            return ("no offer", "bg-secondary");
+        }
+        return offer.Status.Equals("ACTIVE", StringComparison.OrdinalIgnoreCase)
+            ? ($"active · {offer.Price.ToString("0.00", CultureInfo.InvariantCulture)}", "bg-success")
+            : (offer.Status.ToLowerInvariant(), "bg-warning text-dark");
+    }
+
+    private bool CanSaveImport => _preview is not null && _preview.Count > 0 && _preview.All(r => r.Ok);
+
+    private void Preview()
+    {
+        _pushResult = null;
+        var items = OwnStock.Items();
+        var lines = OwnStock.ParseImport(_importText);
+        var counts = lines.GroupBy(l => l.Code).ToDictionary(g => g.Key, g => g.Count());
+
+        _preview = lines.Select(line =>
+        {
+            items.TryGetValue(line.Code, out var item);
+            _byEan.TryGetValue(line.Code, out var product);
+            var newQuantity = SetMode ? line.Quantity : (item?.Quantity ?? 0) + line.Quantity;
+
+            if (line.Error is not null)
+            {
+                return new PreviewRow(line, product, item, newQuantity, false, line.Error, "bg-danger");
+            }
+            if (counts[line.Code] > 1)
+            {
+                return new PreviewRow(line, product, item, newQuantity, false, "entered more than once - keep one line", "bg-danger");
+            }
+            if (product is null && item is null && !OwnStock.IsValidEan(line.Code))
+            {
+                return new PreviewRow(line, product, item, newQuantity, false, "not a valid EAN and not in the catalogue", "bg-danger");
+            }
+            if (product is null)
+            {
+                return new PreviewRow(line, product, item, newQuantity, true, "not in the supplier catalogue - no offer can be created for it", "bg-warning text-dark");
+            }
+            if (!OwnStock.IsValidEan(line.Code))
+            {
+                return new PreviewRow(line, product, item, newQuantity, true, "found, but the EAN checksum is wrong", "bg-warning text-dark");
+            }
+            return new PreviewRow(line, product, item, newQuantity, true, item is null ? "new" : "update", "bg-success");
+        }).ToList();
+
+        if (_preview.Count == 0)
+        {
+            toastService.ShowError("Nothing to import: no line has a code and a quantity.");
+        }
+    }
+
+    private async Task SaveImport()
+    {
+        if (_preview is null)
+        {
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var saved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in _preview.Where(r => r.Ok))
+            {
+                var name = row.Product?.Name;
+                if (SetMode)
+                {
+                    OwnStock.Set(row.Line.Code, row.Line.Quantity, row.Item is null ? StockReason.Manual : StockReason.Correction,
+                        note: "import", unitCost: row.Line.UnitCost, name: name);
+                }
+                else
+                {
+                    OwnStock.Adjust(row.Line.Code, row.Line.Quantity, StockReason.Manual, note: "import", unitCost: row.Line.UnitCost, name: name);
+                }
+                saved.Add(row.Line.Code);
+            }
+
+            toastService.ShowSuccess($"{saved.Count} products saved to own stock.");
+            _preview = null;
+            _importText = "";
+            Load();
+
+            if (_pushAfterSave)
+            {
+                var toPush = _rows.Where(r => saved.Contains(r.Item.Ean) && r.Item.Quantity > 0).Select(r => r.Item.Ean).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (toPush.Count > 0)
+                {
+                    await Push(toPush);
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private void SaveRow(RowVm row)
+    {
+        try
+        {
+            if (row.Quantity != row.Item.Quantity)
+            {
+                OwnStock.Set(row.Item.Ean, row.Quantity, StockReason.Correction, note: "edited on the stock page", unitCost: row.UnitCost, name: row.Name);
+            }
+            else
+            {
+                OwnStock.Describe(row.Item.Ean, row.UnitCost, row.Name, null);
+            }
+            toastService.ShowSuccess($"{row.Item.Ean} saved.");
+            Load();
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+    }
+
+    private void RemoveRow(RowVm row)
+    {
+        try
+        {
+            OwnStock.Remove(row.Item.Ean);
+            toastService.ShowSuccess($"{row.Item.Ean} removed from the stock list.");
+            _confirmRemove = null;
+            Load();
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+    }
+
+    private void UndoLast()
+    {
+        try
+        {
+            var undone = OwnStock.Undo();
+            if (undone is null)
+            {
+                toastService.ShowInfo("Nothing to undo: the last move is already a rollback.");
+                return;
+            }
+            toastService.ShowSuccess($"Undone: {undone.Reason} {undone.Delta:+#;-#;0} of {undone.Ean}.");
+            Load();
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+    }
+
+    private async Task CheckOffers()
+    {
+        _isChecking = true;
+        try
+        {
+            _offers = await allegro.ResolveOffersAsync(_rows.Select(r => r.Item.Ean));
+            toastService.ShowInfo($"{_offers.Count} of {_rows.Count} products have an offer.");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            _isChecking = false;
+        }
+    }
+
+    private Task PushAll() =>
+        Push(_rows.Where(r => r.Item.Quantity > 0).Select(r => r.Item.Ean).ToHashSet(StringComparer.OrdinalIgnoreCase));
+
+    private async Task Push(ISet<string> eans)
+    {
+        _showLog = true;
+        try
+        {
+            _pushResult = await allegro.PushOwnStockAsync(eans);
+            if (_pushResult.Failed > 0)
+            {
+                toastService.ShowError($"{_pushResult.Updated} updated, {_pushResult.Created} created, {_pushResult.Failed} failed - see the log.");
+            }
+            else
+            {
+                toastService.ShowSuccess($"{_pushResult.Updated} offers updated, {_pushResult.Created} created on Allegro.");
+            }
+            _offers = await allegro.ResolveOffersAsync(_rows.Select(r => r.Item.Ean));
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+    }
+}

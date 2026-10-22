@@ -138,6 +138,48 @@ public class AllegroPublishService
     public Task<List<OfferCreator.Candidate>> PlanNewOffersAsync() =>
         new OfferCreator(_publisher).PlanAsync(Log);
 
+    public Task<Dictionary<string, BundlePlan.OfferSnapshot>> ResolveOffersAsync(IEnumerable<string> eans) =>
+        new BundlePlan(_publisher).ResolveOffersAsync(eans, Log);
+
+    public record StockPushResult(int Updated, int Created, int Failed, int Forbidden, List<OfferCreator.Candidate> NotCreated);
+
+    public async Task<StockPushResult> PushOwnStockAsync(ISet<string> eans)
+    {
+        if (IsGenerating || IsPublishing)
+        {
+            throw new InvalidOperationException("Another job is already running.");
+        }
+
+        IsPublishing = true;
+        try
+        {
+            Log($"Pushing own stock of {eans.Count} products to Allegro ...");
+            var updated = await _publisher.PublishAsync(Log, eans);
+
+            var creator = new OfferCreator(_publisher);
+            var plan = await creator.PlanAsync(Log, eans);
+            var todo = plan.Where(c => c.CanCreate).ToList();
+            var notCreated = plan.Where(c => !c.CanCreate).ToList();
+            var created = new OfferCreator.Result(0, 0);
+            if (todo.Count > 0)
+            {
+                if (string.IsNullOrWhiteSpace(SaverExtensions.ListingOptions.Read().NewOfferTemplateId))
+                {
+                    Log($"{todo.Count} products have no offer and none is created: no template offer is set.");
+                }
+                else
+                {
+                    created = await creator.CreateAsync(todo, Log);
+                }
+            }
+            return new StockPushResult(updated, created.Created, created.Failed, created.Forbidden, notCreated);
+        }
+        finally
+        {
+            IsPublishing = false;
+        }
+    }
+
     public async Task<OfferCreator.Result> CreateOffersAsync(IEnumerable<OfferCreator.Candidate> candidates)
     {
         if (IsGenerating || IsPublishing)
@@ -175,4 +217,26 @@ public class AllegroPublishService
     }
 
     public Task<bool> RefreshToken() => _publisher.TryRefreshAsync(Log);
+
+    public bool IsSyncingOrders { get; private set; }
+
+    public async Task<int> SyncOrdersAsync()
+    {
+        if (IsSyncingOrders)
+        {
+            throw new InvalidOperationException("Orders are already being synced.");
+        }
+
+        IsSyncingOrders = true;
+        try
+        {
+            return await new OrderSync(_publisher).SyncAsync(Log);
+        }
+        finally
+        {
+            IsSyncingOrders = false;
+        }
+    }
+
+    public int ConfirmPurchase(IEnumerable<OrderSync.Bought> bought) => OrderSync.ConfirmPurchase(bought, Log);
 }

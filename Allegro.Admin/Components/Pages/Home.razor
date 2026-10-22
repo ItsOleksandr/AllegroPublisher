@@ -16,6 +16,8 @@
     <h1 class="mb-0">Allegro parser</h1>
     <div class="d-flex align-items-center flex-wrap gap-2">
         <a class="btn btn-outline-secondary" href="/products">Products</a>
+        <a class="btn btn-outline-secondary" href="/stock">My stock</a>
+        <a class="btn btn-outline-secondary" href="/orders">Orders & purchases</a>
         <a class="btn btn-outline-secondary" href="/content">Titles & descriptions</a>
         <a href="https://salescenter.allegro.com/import-and-list" class="btn btn-outline-secondary" target="_blank">sales center allegro</a>
         <button class="btn btn-success" @onclick="SaveAllOptions">Save all options</button>
@@ -104,7 +106,18 @@
                             A product the parser has not refreshed for this long is published with zero stock, so its offer
                             ends. Products deleted on the supplier's site go to zero straight away. If more than half the
                             catalogue is this old, the parser is assumed broken: stock is left alone and Telegram is told.
-                            0 = off.
+                            0 = off. A product with own stock on the <a href="/stock">My stock</a> page is never ended:
+                            it is sold from that stock instead.
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check">
+                            <input id="addOwnStockCheck" class="form-check-input" type="checkbox" @bind="_listingOptions.AddOwnStockToSupplier" />
+                            <label class="form-check-label" for="addOwnStockCheck">Add own stock to the supplier's quantity</label>
+                        </div>
+                        <div class="form-text">
+                            Off: own stock is offered only when the supplier has none. On: the offer quantity is the supplier's
+                            stock plus what lies in own stock.
                         </div>
                     </div>
                 </div>

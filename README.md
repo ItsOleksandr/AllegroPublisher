@@ -55,6 +55,24 @@ so its offer ends; any product the parser has not refreshed for
 than half the catalogue is that old — then the parser is assumed broken, stock is
 left alone and Telegram is told.
 
+**4a — Own stock.** The seller's own shelf is kept apart from the supplier's
+(`OwnStock`, the *My stock* page): units left over from a minimum-order purchase,
+or a product the supplier has dropped but the seller still holds. `StockPlanner`
+decides what an offer gets: the supplier's stock as long as the supplier has the
+product, otherwise the own stock, priced from its purchase cost through the same
+multiplier ladder. A product with own stock is never ended for being stale or
+deleted upstream. Every change of quantity is a `StockMove` with a reason, and
+the last one can be undone.
+
+**4b — Orders and purchases.** `OrderSync` follows the Allegro order event
+stream (`/order/events`, polled every five minutes by the admin panel). A paid
+order is split line by line: whatever own stock can cover is written off at once
+(`order` moves), the rest lands on the purchase list, which rounds the total need
+of all open orders up to the supplier's minimum order. After the trip the seller
+presses *Bought*; what the orders need is set aside, the surplus goes to own
+stock at the paid price (`purchase`). A cancelled order gives its pieces back.
+Needs the `allegro:api:orders:read` scope on the Allegro app.
+
 **5 — List new products.** `OfferCreator` creates an offer for every sellable
 product that has none yet: it finds the product's Allegro catalogue card by EAN,
 copies delivery, returns, invoice, location and GPSR settings from a template
@@ -92,6 +110,8 @@ The shared library — no UI, no entry point.
 | `BundlePlan.cs` | Works out which offers should be packs, and of what size. Writes nothing |
 | `BundleConverter.cs` | Applies that plan — the only code that rewrites a live offer |
 | `OfferCreator.cs` | Creates offers for products that have none, from their catalogue card and a template offer |
+| `OrderSync.cs` | Reads Allegro orders, writes them off against own stock, builds the purchase list and books the purchase |
+| `OwnStock.cs`, `StockPlanner.cs` | The seller's own stock with its move journal, and how it combines with the supplier's stock into an offer quantity and price |
 | `ContentGenerator.cs`, `ContentApplier.cs`, `AutoContent.cs` | AI titles and descriptions: generate, review, apply |
 | `Saver.cs` | Small typed JSON file store used for every settings file |
 | `TelegramNotify.cs` | Alerts to a Telegram chat |

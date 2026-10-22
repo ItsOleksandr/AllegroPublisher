@@ -6,6 +6,7 @@ public class ListingOptions
     public decimal MinimalPrice { get; set; } = 0m;
     public int BundleFromQuantity { get; set; } = 5;
     public int StaleAfterHours { get; set; } = 48;
+    public bool AddOwnStockToSupplier { get; set; } = false;
     public string NewOfferTemplateId { get; set; } = "";
     public bool AutoCreateOffers { get; set; } = true;
     public bool AiCheckNewOffers { get; set; } = true;
@@ -49,9 +50,12 @@ public class ListingOptions
     public List<PriceTier> BundlePriceMultipliers { get; set; } = new();
     public decimal BundleDefaultMultiplier { get; set; } = 3m;
 
+    public bool IsBlackListed(ProductInfo product) =>
+        product.CategoriesUrls.Any(url => CategoriesBlackList.Any(url.Contains))
+        || EansBlackList.Contains(product.EAN);
+
     public bool Includes(ProductInfo product) =>
-        !product.CategoriesUrls.Any(url => CategoriesBlackList.Any(url.Contains))
-        && !EansBlackList.Contains(product.EAN)
+        !IsBlackListed(product)
         && !string.IsNullOrWhiteSpace(product.EAN)
         && !product.EAN.Contains("—")
         && product.Price >= MinimalPrice
@@ -90,9 +94,11 @@ public class ListingOptions
 
     public decimal GetOfferPrice(ProductInfo product) => GetOfferPrice(product, GetPackSize(product));
 
-    public decimal GetOfferPrice(ProductInfo product, int pack)
+    public decimal GetOfferPrice(ProductInfo product, int pack) => GetOfferPrice(product, pack, product.Price);
+
+    public decimal GetOfferPrice(ProductInfo product, int pack, decimal unitPrice)
     {
-        var cost = product.Price * pack;
+        var cost = unitPrice * pack;
 
         var asBundle = pack == GetPackSize(product) ? IsBundle(product) : pack > 1;
         var markup = asBundle

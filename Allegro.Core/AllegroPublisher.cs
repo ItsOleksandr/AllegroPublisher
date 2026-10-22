@@ -212,13 +212,14 @@ public class AllegroPublisher
         SaverExtensions.AllegroSettings.Write();
     }
 
-    public async Task<int> PublishAsync(Action<string>? log = null)
+    public async Task<int> PublishAsync(Action<string>? log = null, ISet<string>? onlyEans = null)
     {
         await EnsureValidTokenAsync();
 
         var options = SaverExtensions.ListingOptions.Read();
         var products = SaverExtensions.Products.Read().Values.Where(p => !string.IsNullOrWhiteSpace(p.EAN)).ToList();
         var stale = products.Where(options.IsStale).Select(p => p.Url).ToHashSet();
+        var ownStock = OwnStock.Items();
         if (stale.Count > 0 && stale.Count * 2 > products.Count)
         {
             log?.Invoke($"{stale.Count} of {products.Count} products were not refreshed for {options.StaleAfterHours} hours - " +
@@ -232,8 +233,17 @@ public class AllegroPublisher
             log?.Invoke($"{stale.Count} products were not refreshed for {options.StaleAfterHours} hours - treated as out of stock.");
         }
 
-        var listings = BuildListings(products, options, stale);
-        log?.Invoke($"{listings.Count} products with an EAN, {listings.Count(r => r.Count > 0)} of them sellable.");
+        var listings = BuildListings(products, options, stale, ownStock);
+        if (onlyEans is not null)
+        {
+            listings = listings.Where(r => onlyEans.Contains(r.Ean)).ToList();
+        }
+        log?.Invoke($"{listings.Count} products with an EAN, {listings.Count(r => r.Count > 0)} of them sellable, " +
+                    $"{listings.Count(r => r.Plan.FromOwnStock && r.Count > 0)} sold from own stock.");
+        foreach (var row in listings.Where(r => r.Plan.Warning is not null && r.Plan.OwnUnits > 0))
+        {
+            log?.Invoke($"Own stock {row.Ean}: {row.Plan.Warning}.");
+        }
         if (listings.Count == 0)
         {
             return 0;
@@ -267,7 +277,7 @@ public class AllegroPublisher
             var price = offer.Price;
             try
             {
-                var row = await MatchListedPackAsync(planned, offerId, listedPacks, options, log);
+                var row = await MatchListedPackAsync(planned, offerId, listedPacks, options, stale, ownStock, log);
                 if (row.Count > 0)
                 {
                     var changed = false;
@@ -335,7 +345,8 @@ public class AllegroPublisher
     }
 
     private async Task<ListingRow> MatchListedPackAsync(
-        ListingRow row, string offerId, Dictionary<string, int> listedPacks, ListingOptions options, Action<string>? log)
+        ListingRow row, string offerId, Dictionary<string, int> listedPacks, ListingOptions options,
+        HashSet<string> stale, Dictionary<string, OwnStockItem> ownStock, Action<string>? log)
     {
         var listed = listedPacks.TryGetValue(row.Ean, out var known) ? known : 1;
         if (listed == row.Pack || row.Count == 0)
@@ -357,12 +368,8 @@ public class AllegroPublisher
 
         log?.Invoke($"Offer {offerId} (EAN {row.Ean}) is still listed as {DescribePack(pack)}, not {DescribePack(row.Pack)} - " +
                     "priced and stocked as listed until it is converted.");
-        return row with
-        {
-            Pack = pack,
-            Count = row.Count > 0 ? options.GetOfferStock(row.Product, pack) : 0,
-            Price = options.GetOfferPrice(row.Product, pack),
-        };
+        ownStock.TryGetValue(row.Ean, out var own);
+        return ToRow(StockPlanner.Plan(row.Product, options, stale.Contains(row.Product.Url), own, pack));
     }
 
     private static string DescribePack(int pack) => pack > 1 ? $"a pack of {pack}" : "single units";
@@ -446,9 +453,11 @@ public class AllegroPublisher
         }
     }
 
-    private static List<ListingRow> BuildListings(IEnumerable<ProductInfo> products, ListingOptions options, HashSet<string> stale)
+    private static List<ListingRow> BuildListings(
+        IEnumerable<ProductInfo> products, ListingOptions options, HashSet<string> stale, Dictionary<string, OwnStockItem> ownStock)
     {
         var listings = new List<ListingRow>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var product in products)
         {
             if (string.IsNullOrWhiteSpace(product.EAN))
@@ -456,15 +465,19 @@ public class AllegroPublisher
                 continue;
             }
 
-            listings.Add(new ListingRow(
-                product,
-                product.EAN,
-                options.Includes(product) && !stale.Contains(product.Url) ? options.GetOfferStock(product) : 0,
-                options.GetOfferPrice(product),
-                options.GetPackSize(product)));
+            seen.Add(product.EAN.Trim());
+            ownStock.TryGetValue(product.EAN.Trim(), out var own);
+            listings.Add(ToRow(StockPlanner.Plan(product, options, stale.Contains(product.Url), own)));
+        }
+
+        foreach (var own in ownStock.Values.Where(o => o.Quantity > 0 && !seen.Contains(o.Ean)))
+        {
+            listings.Add(ToRow(StockPlanner.Plan(StockPlanner.Placeholder(own), options, false, own)));
         }
         return listings;
     }
+
+    private static ListingRow ToRow(PlannedListing plan) => new(plan.Product, plan.Ean, plan.Count, plan.Price, plan.Pack, plan);
 
     
     public record OrphanOffer(string Id, string Ean, string Name, string Reason);
@@ -483,9 +496,10 @@ public class AllegroPublisher
                 productByEan[product.EAN] = product;
             }
         }
+        var ownStock = OwnStock.Items();
 
         var orphans = new List<OrphanOffer>();
-        int total = 0, foreign = 0, unknown = 0;
+        int total = 0, foreign = 0, unknown = 0, ownStocked = 0;
 
         foreach (var offer in await ListOffersAsync("ACTIVE"))
         {
@@ -508,12 +522,19 @@ public class AllegroPublisher
 
             if (!options.Includes(product))
             {
+                ownStock.TryGetValue(ean, out var own);
+                if (StockPlanner.Plan(product, options, false, own).Count > 0)
+                {
+                    ownStocked++;
+                    continue;
+                }
                 orphans.Add(new OrphanOffer(offer.Id, ean, offer.Name, ExplainRejection(product, options)));
             }
         }
 
         log?.Invoke($"Scanned {total} active offers — {foreign} not listed by this app, {unknown} not in the " +
-                    $"parsed catalogue (both left alone), {orphans.Count} no longer pass the listing options.");
+                    $"parsed catalogue (both left alone), {ownStocked} kept alive by own stock, " +
+                    $"{orphans.Count} no longer pass the listing options.");
         return orphans;
     }
 
@@ -772,7 +793,7 @@ public class AllegroPublisher
         }
     }
 
-    private record ListingRow(ProductInfo Product, string Ean, int Count, decimal Price, int Pack);
+    private record ListingRow(ProductInfo Product, string Ean, int Count, decimal Price, int Pack, PlannedListing Plan);
 
     private class DeviceCodeResponse
     {

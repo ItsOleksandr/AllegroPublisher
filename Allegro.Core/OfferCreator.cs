@@ -26,19 +26,36 @@ public sealed class OfferCreator
 
     public record Candidate(
         ProductInfo Product, string? ProductId, string? CategoryId, string? Problem,
-        string Name = "", int Pack = 1, decimal Price = 0m, int Stock = 0)
+        string Name = "", int Pack = 1, decimal Price = 0m, int Stock = 0, bool FromOwnStock = false)
     {
         public bool CanCreate => Problem is null;
     }
 
     public record Result(int Created, int Failed, int Forbidden = 0);
 
-    public async Task<List<Candidate>> PlanAsync(Action<string>? log = null)
+    public async Task<List<Candidate>> PlanAsync(Action<string>? log = null, ISet<string>? onlyEans = null)
     {
         var options = SaverExtensions.ListingOptions.Read();
-        var sellable = SaverExtensions.Products.Read().Values
-            .Where(p => options.Includes(p) && !options.IsStale(p))
-            .ToList();
+        var ownStock = OwnStock.Items();
+        var plans = new Dictionary<string, PlannedListing>(StringComparer.OrdinalIgnoreCase);
+        foreach (var product in SaverExtensions.Products.Read().Values.Where(p => !string.IsNullOrWhiteSpace(p.EAN)))
+        {
+            ownStock.TryGetValue(product.EAN.Trim(), out var own);
+            var plan = StockPlanner.Plan(product, options, options.IsStale(product), own);
+            if (plan.Count > 0 && (onlyEans is null || onlyEans.Contains(plan.Ean)))
+            {
+                plans[plan.Ean] = plan;
+            }
+        }
+        foreach (var own in ownStock.Values.Where(o => o.Quantity > 0 && !plans.ContainsKey(o.Ean)))
+        {
+            var plan = StockPlanner.Plan(StockPlanner.Placeholder(own), options, false, own);
+            if (plan.Count > 0 && (onlyEans is null || onlyEans.Contains(plan.Ean)))
+            {
+                plans[plan.Ean] = plan;
+            }
+        }
+        var sellable = plans.Values.Select(p => p.Product).ToList();
 
         var known = await new BundlePlan(_publisher).ResolveOffersAsync(sellable.Select(p => p.EAN), log);
         var missing = sellable.Where(p => !known.ContainsKey(p.EAN)).ToList();
@@ -93,14 +110,15 @@ public sealed class OfferCreator
             var product = candidate.Product;
             if (candidate.CanCreate)
             {
-                var pack = options.GetPackSize(product);
-                var name = BundlePlan.BuildName(product.Name, pack);
+                var plan = plans[product.EAN];
+                var name = BundlePlan.BuildName(product.Name, plan.Pack);
                 candidate = candidate with
                 {
                     Name = name,
-                    Pack = pack,
-                    Price = options.GetOfferPrice(product),
-                    Stock = options.GetOfferStock(product),
+                    Pack = plan.Pack,
+                    Price = plan.Price,
+                    Stock = plan.Count,
+                    FromOwnStock = plan.FromOwnStock,
                     Problem = IsValidName(name) ? null : "the supplier's name is too short for an Allegro title",
                 };
             }

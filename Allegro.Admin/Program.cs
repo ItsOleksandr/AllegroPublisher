@@ -19,6 +19,7 @@ builder.Services.AddSingleton<Saver<SaveData>>( _ => new Saver<SaveData>("admin_
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<AllegroPublishService>();
 builder.Services.AddHostedService<AllegroTokenRefresher>();
+builder.Services.AddHostedService<OrderSyncWorker>();
 builder.Services.AddDataProtection()
     .SetApplicationName("Allegro.Admin")
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(SaverExtensions.ResourceDirectory, "DataProtection-Keys")));
