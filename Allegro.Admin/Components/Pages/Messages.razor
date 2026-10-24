@@ -1,0 +1,408 @@
+@page "/messages"
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@inject ToastService toastService
+@inject AllegroPublishService allegro
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+<PageTitle>Messages · Allegro parser</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <h1 class="mb-0">Wiadomości do akceptacji</h1>
+    <div class="d-flex align-items-center flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" href="/">← Back to dashboard</a>
+        <button class="btn btn-outline-primary" disabled="@(!allegro.Settings.IsConnected || allegro.IsReplying || !_settings.Enabled)" @onclick="RunNow">
+            @(allegro.IsReplying ? "Running..." : "Check messages now")
+        </button>
+        <form action="/auth/logout" method="post" class="m-0">
+            <button class="btn btn-outline-danger" type="submit">Logout</button>
+        </form>
+    </div>
+</div>
+
+<div class="row text-center g-3 mb-4">
+    <div class="col-6 col-md-2">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold">@_today.Count</div>
+            <div class="text-muted small">Received today</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold text-success">@_today.Count(t => t.Status == ThreadStatus.Auto)</div>
+            <div class="text-muted small">Answered automatically</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold text-primary">@_today.Count(t => t.Status is ThreadStatus.Sent or ThreadStatus.Rejected)</div>
+            <div class="text-muted small">Answered by you</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold text-warning">@_pending.Count</div>
+            <div class="text-muted small">Waiting for you</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold text-danger">@_pending.Count(t => DateTime.Now - t.ReceivedAt > TimeSpan.FromHours(18))</div>
+            <div class="text-muted small">Over 18 h, at risk</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card shadow-sm h-100"><div class="card-body py-3">
+            <div class="fs-4 fw-bold">@AverageAnswer</div>
+            <div class="text-muted small">Avg. answer time (7 days)</div>
+        </div></div>
+    </div>
+</div>
+
+@if (!_settings.Enabled)
+{
+    <div class="alert alert-warning py-2">Auto replies are <strong>off</strong>. Nothing is read from Allegro until you enable them in the settings below.</div>
+}
+else if (_settings.InTestMode(DateTime.Now))
+{
+    <div class="alert alert-info py-2">Test mode until <strong>@_settings.TestModeUntil.ToString("yyyy-MM-dd HH:mm")</strong>: full answers are not sent automatically, they wait here as drafts. Confirmations (level 1) go out as usual.</div>
+}
+@if (_settings.LastError.Length > 0)
+{
+    <div class="alert alert-danger py-2">Last run @_settings.LastRunAt.ToString("yyyy-MM-dd HH:mm"): @_settings.LastError</div>
+}
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header fw-semibold">Waiting for your decision (@_pending.Count)</div>
+    <div class="card-body p-0">
+        @if (_pending.Count == 0)
+        {
+            <div class="p-4 text-center text-muted">No drafts waiting.</div>
+        }
+        else
+        {
+            @foreach (var t in _pending)
+            {
+                var age = DateTime.Now - t.ReceivedAt;
+                <div class="border-bottom p-3">
+                    <div class="d-flex justify-content-between flex-wrap gap-2 mb-2">
+                        <div>
+                            <span class="badge @(t.IsIssue ? "bg-danger" : "bg-secondary")">@(t.IsIssue ? "reklamacja / dyskusja" : "wiadomość")</span>
+                            <strong class="ms-1">@t.Buyer</strong>
+                            <span class="text-muted small ms-2">@t.ReceivedAt.ToString("yyyy-MM-dd HH:mm") · @age.TotalHours.ToString("0") h ago</span>
+                            @if (t.Topic.Length > 0)
+                            {
+                                <span class="badge bg-light text-dark border ms-2">@t.Topic @(t.Confidence > 0 ? t.Confidence.ToString("0.00") : "")</span>
+                            }
+                            @if (t.AckSentAt is not null)
+                            {
+                                <span class="badge bg-info text-dark ms-1">confirmation sent @t.AckSentAt.Value.ToString("HH:mm")</span>
+                            }
+                        </div>
+                        <div class="small text-muted">
+                            @if (t.OfferId.Length > 0)
+                            {
+                                <a href="https://allegro.pl/oferta/@t.OfferId" target="_blank" rel="noreferrer" class="text-decoration-none">@(t.OfferName.Length > 0 ? t.OfferName : $"offer {t.OfferId}")</a>
+                            }
+                            @if (t.OrderId.Length > 0)
+                            {
+                                <span> · <a href="https://salescenter.allegro.com/orders/@t.OrderId" target="_blank" rel="noreferrer" class="text-decoration-none">order @t.OrderId[..Math.Min(8, t.OrderId.Length)]…</a></span>
+                            }
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12 col-lg-5">
+                            <div class="small text-muted mb-1">Buyer wrote@(t.Subject.Length > 0 ? $" · {t.Subject}" : ""):</div>
+                            <div class="border rounded p-2 bg-light" style="white-space: pre-wrap">@t.BuyerText</div>
+                            @if (t.Context.Length > 0)
+                            {
+                                <div class="small text-muted mt-1">@t.Context</div>
+                            }
+                            @if (t.DraftReason.Length > 0)
+                            {
+                                <div class="small text-warning mt-1">Why it is here: @t.DraftReason</div>
+                            }
+                            @if (t.Error.Length > 0)
+                            {
+                                <div class="small text-danger mt-1">@t.Error</div>
+                            }
+                        </div>
+                        <div class="col-12 col-lg-7">
+                            <div class="small text-muted mb-1">Draft (edit freely, the signature is added when sending):</div>
+                            <textarea class="form-control" rows="5" @bind="_drafts[t.Id]"></textarea>
+                            <div class="d-flex gap-2 mt-2">
+                                <button class="btn btn-success" disabled="@(_busy || string.IsNullOrWhiteSpace(_drafts[t.Id]))" @onclick="() => Send(t)">Wyślij</button>
+                                <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="() => Reject(t)">Odrzuć (odpowiem sam)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-semibold">Settings</span>
+        <button class="btn btn-sm btn-primary" @onclick="SaveSettings">Save settings</button>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-12 col-md-3">
+                <div class="form-check form-switch">
+                    <input id="arEnabled" class="form-check-input" type="checkbox" @bind="_settings.Enabled" />
+                    <label class="form-check-label fw-semibold" for="arEnabled">Autoodpowiedzi: @(_settings.Enabled ? "włączone" : "wyłączone")</label>
+                </div>
+                <div class="form-check mt-2"><input id="l1" class="form-check-input" type="checkbox" @bind="_settings.Level1" /><label class="form-check-label" for="l1">Level 1 · confirmation</label></div>
+                <div class="form-check"><input id="l2" class="form-check-input" type="checkbox" @bind="_settings.Level2" /><label class="form-check-label" for="l2">Level 2 · automatic answers</label></div>
+                <div class="form-check"><input id="l3" class="form-check-input" type="checkbox" @bind="_settings.Level3" /><label class="form-check-label" for="l3">Level 3 · AI drafts</label></div>
+                <div class="form-check"><input id="issues" class="form-check-input" type="checkbox" @bind="_settings.HandleIssues" /><label class="form-check-label" for="issues">Issues and disputes (confirmation + draft only)</label></div>
+                <div class="form-check"><input id="tg" class="form-check-input" type="checkbox" @bind="_settings.NotifyTelegram" /><label class="form-check-label" for="tg">Telegram notifications</label></div>
+            </div>
+            <div class="col-12 col-md-3">
+                <div class="small fw-semibold mb-1">Level 2 topics</div>
+                <div class="form-check"><input id="tAv" class="form-check-input" type="checkbox" @bind="_settings.TopicAvailability" /><label class="form-check-label" for="tAv">Availability / quantity</label></div>
+                <div class="form-check"><input id="tSh" class="form-check-input" type="checkbox" @bind="_settings.TopicShipping" /><label class="form-check-label" for="tSh">When will you ship</label></div>
+                <div class="form-check"><input id="tPa" class="form-check-input" type="checkbox" @bind="_settings.TopicParcel" /><label class="form-check-label" for="tPa">Where is the parcel</label></div>
+                <div class="form-check"><input id="tIn" class="form-check-input" type="checkbox" @bind="_settings.TopicInvoice" /><label class="form-check-label" for="tIn">Invoice</label></div>
+                <div class="form-check"><input id="tDe" class="form-check-input" type="checkbox" @bind="_settings.TopicDescription" /><label class="form-check-label" for="tDe">Facts from the description (quote only)</label></div>
+                <label class="form-label mt-2 mb-0 small" for="thr">Classifier confidence threshold</label>
+                <input id="thr" class="form-control form-control-sm" type="number" min="0" max="1" step="0.05" @bind="_settings.ConfidenceThreshold" />
+            </div>
+            <div class="col-12 col-md-3">
+                <div class="small fw-semibold mb-1">Working hours (0 – 0 = closed)</div>
+                @for (int i = 0; i < 7; i++)
+                {
+                    var day = _settings.Week[i];
+                    var name = DayNames[i];
+                    <div class="d-flex align-items-center gap-1 mb-1">
+                        <span class="small" style="width: 36px">@name</span>
+                        <input class="form-control form-control-sm" style="width: 64px" type="number" min="0" max="23" @bind="day.Start" />
+                        <span class="small">–</span>
+                        <input class="form-control form-control-sm" style="width: 64px" type="number" min="0" max="24" @bind="day.End" />
+                    </div>
+                }
+                <label class="form-label mt-2 mb-0 small" for="within">Promise an answer within (working hours)</label>
+                <input id="within" class="form-control form-control-sm" type="number" min="1" max="12" @bind="_settings.ReplyWithinHours" />
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label mb-0 small" for="ack">Confirmation text ({termin} = deadline)</label>
+                <textarea id="ack" class="form-control form-control-sm mb-2" rows="2" @bind="_settings.AckTemplate"></textarea>
+                <label class="form-label mb-0 small" for="iack">Confirmation for issues</label>
+                <textarea id="iack" class="form-control form-control-sm mb-2" rows="2" @bind="_settings.IssueAckTemplate"></textarea>
+                <label class="form-label mb-0 small" for="sig">Signature</label>
+                <input id="sig" class="form-control form-control-sm mb-2" @bind="_settings.Signature" />
+                <label class="form-label mb-0 small" for="inv">Invoice answer</label>
+                <textarea id="inv" class="form-control form-control-sm mb-2" rows="2" @bind="_settings.InvoiceText"></textarea>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label mb-0 small" for="cm">Classifier model</label>
+                <input id="cm" class="form-control form-control-sm mb-2" @bind="_settings.ClassifierModel" />
+                <label class="form-label mb-0 small" for="dm">Draft model</label>
+                <input id="dm" class="form-control form-control-sm mb-2" @bind="_settings.DraftModel" />
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label mb-0 small" for="chat">Telegram chat ID for the seller</label>
+                <div class="d-flex gap-1 mb-1">
+                    <input id="chat" class="form-control form-control-sm" placeholder="e.g. 123456789" @bind="_settings.TelegramChatId" />
+                    <button class="btn btn-sm btn-outline-secondary text-nowrap" disabled="@_busy" @onclick="TestTelegram">Send test</button>
+                </div>
+                <div class="form-text mb-2">
+                    Where new-message alerts and 18 h / 22 h reminders go. The person writes <code>/start</code> to the program's Telegram bot,
+                    then their chat ID is the number shown by <code>@@userinfobot</code>. Empty = the admin chat from <code>coresettings.json</code>.
+                </div>
+                <label class="form-label mb-0 small" for="url">Panel address in notifications</label>
+                <input id="url" class="form-control form-control-sm mb-2" @bind="_settings.AdminUrl" />
+                <label class="form-label mb-0 small" for="seller">Seller name</label>
+                <input id="seller" class="form-control form-control-sm mb-2" @bind="_settings.SellerName" />
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label mb-0 small" for="test">Test mode until</label>
+                <input id="test" class="form-control form-control-sm mb-1" type="datetime-local" @bind="_settings.TestModeUntil" />
+                <div class="form-text">Set automatically to @_settings.TestDays days ahead when auto replies are first enabled. Clear or move it back to start sending level 2 answers.</div>
+            </div>
+        </div>
+        <div class="small text-muted mt-3">
+            Allegro scopes needed: <code>allegro:api:messaging</code>, and <code>allegro:api:disputes</code> for issues. After adding them, reconnect the account on the dashboard.
+            @if (_settings.LastRunAt != DateTime.MinValue)
+            {
+                <span> Last run @_settings.LastRunAt.ToString("yyyy-MM-dd HH:mm").</span>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header fw-semibold">Journal (last 100)</div>
+    <div class="card-body p-0">
+        @if (_log.Count == 0)
+        {
+            <div class="p-4 text-center text-muted">Nothing yet.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>When</th>
+                            <th>Buyer</th>
+                            <th>Direction</th>
+                            <th>Level</th>
+                            <th>Topic</th>
+                            <th>Text</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var e in _log.AsEnumerable().Reverse().Take(100))
+                        {
+                            <tr>
+                                <td class="text-nowrap small">@e.At.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td class="small">@e.Buyer @(e.Kind == "issue" ? "⚠" : "")</td>
+                                <td><span class="badge @(e.Direction == "in" ? "bg-secondary" : e.Sender == "auto" ? "bg-success" : "bg-primary")">@e.Direction · @e.Sender</span></td>
+                                <td class="small">@(e.Level > 0 ? e.Level.ToString() : "")</td>
+                                <td class="small">@e.Topic</td>
+                                <td class="small" style="white-space: pre-wrap; max-width: 600px">@e.Text</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly string[] DayNames = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+
+    private AutoReplySettings _settings = new();
+    private List<MessageThread> _all = new();
+    private List<MessageThread> _pending = new();
+    private List<MessageThread> _today = new();
+    private List<MessageLogEntry> _log = new();
+    private Dictionary<string, string> _drafts = new();
+    private bool _busy;
+
+    protected override void OnInitialized() => Load();
+
+    private void Load()
+    {
+        _settings = AutoReplyStore.Settings();
+        _all = AutoReplyStore.Threads().Values.ToList();
+        _pending = _all.Where(t => t.Status == ThreadStatus.Draft && t.NeedsAnswer).OrderBy(t => t.ReceivedAt).ToList();
+        _today = _all.Where(t => t.ReceivedAt.Date == DateTime.Today).ToList();
+        _log = AutoReplyStore.Log();
+        foreach (var t in _pending)
+        {
+            _drafts.TryAdd(t.Id, t.Draft);
+        }
+    }
+
+    private string AverageAnswer
+    {
+        get
+        {
+            var answered = _all.Where(t => t.AnsweredAt is not null && t.ReceivedAt > DateTime.Now.AddDays(-7) && t.Status != ThreadStatus.Rejected).ToList();
+            if (answered.Count == 0)
+            {
+                return "—";
+            }
+            var avg = TimeSpan.FromTicks((long)answered.Average(t => (t.AnsweredAt!.Value - t.ReceivedAt).Ticks));
+            return avg.TotalHours >= 1 ? $"{avg.TotalHours:0.0} h" : $"{avg.TotalMinutes:0} min";
+        }
+    }
+
+    private async Task Send(MessageThread t)
+    {
+        _busy = true;
+        try
+        {
+            await allegro.SendDraftAsync(t.Id, _drafts[t.Id]);
+            toastService.ShowSuccess($"Sent to {t.Buyer}.");
+            _drafts.Remove(t.Id);
+            Load();
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Reject(MessageThread t)
+    {
+        AutoReplyEngine.Reject(t.Id);
+        _drafts.Remove(t.Id);
+        toastService.ShowInfo($"Draft for {t.Buyer} rejected.");
+        Load();
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            if (_settings.Enabled && _settings.TestModeUntil == DateTime.MinValue)
+            {
+                _settings.TestModeUntil = DateTime.Now.AddDays(_settings.TestDays);
+            }
+            AutoReplyStore.Save(_settings);
+            toastService.ShowSuccess("Settings saved.");
+            Load();
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+    }
+
+    private async Task TestTelegram()
+    {
+        _busy = true;
+        try
+        {
+            var sent = await new TelegramNotify().SendToAsync(_settings.TelegramChatId, $"#AllegroApp Test: tu będą przychodzić wiadomości od kupujących. Panel: {_settings.AdminUrl.TrimEnd('/')}/messages");
+            if (sent)
+            {
+                toastService.ShowSuccess("Test message sent. Save the settings to keep the chat ID.");
+            }
+            else
+            {
+                toastService.ShowError("Telegram did not accept the message: check the chat ID and that the person has started the bot.");
+            }
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RunNow()
+    {
+        try
+        {
+            var result = await allegro.RunAutoReplyAsync();
+            if (result.Errors.Count > 0)
+            {
+                toastService.ShowError(string.Join(" · ", result.Errors));
+            }
+            else
+            {
+                toastService.ShowSuccess($"{result.Incoming} new messages: {result.Auto} answered automatically, {result.Drafts} drafts, {result.Acks} confirmations sent.");
+            }
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        Load();
+    }
+}

@@ -276,4 +276,26 @@ public class AllegroPublishService
     public Task<List<BaseLinkerStatus>> LoadBaseLinkerStatusesAsync(string token) => new BaseLinkerClient(token).GetStatusesAsync();
 
     public void AcceptReturn(string id, Dictionary<string, int> accepted) => ReturnSync.Accept(id, accepted, Log);
+
+    public bool IsReplying { get; private set; }
+
+    public async Task<AutoReplyEngine.RunResult> RunAutoReplyAsync()
+    {
+        if (IsReplying)
+        {
+            throw new InvalidOperationException("Messages are already being processed.");
+        }
+
+        IsReplying = true;
+        try
+        {
+            return await new AutoReplyEngine(_publisher).RunAsync(Log);
+        }
+        finally
+        {
+            IsReplying = false;
+        }
+    }
+
+    public Task SendDraftAsync(string threadId, string text) => new AutoReplyEngine(_publisher).SendDraftAsync(threadId, text, Log);
 }

@@ -41,13 +41,15 @@ public sealed class AiClient
 
     public int Calls => Volatile.Read(ref _calls);
 
-    public async Task<string> CompleteAsync(string system, string content)
+    public Task<string> CompleteAsync(string system, string content) => CompleteAsync(system, content, Model, 16000);
+
+    public async Task<string> CompleteAsync(string system, string content, string model, int maxTokens)
     {
         Interlocked.Increment(ref _calls);
         var response = await _client.Messages.Create(new MessageCreateParams
         {
-            Model = Model,
-            MaxTokens = 16000,
+            Model = model,
+            MaxTokens = maxTokens,
             System = system,
             Messages = [new() { Role = Role.User, Content = content }],
         });
@@ -57,7 +59,7 @@ public sealed class AiClient
 
         if (response.StopReason == "refusal")
         {
-            throw new InvalidOperationException("the model declined this product.");
+            throw new InvalidOperationException("the model declined this request.");
         }
         if (response.StopReason == "max_tokens")
         {

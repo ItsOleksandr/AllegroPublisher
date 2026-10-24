@@ -82,6 +82,18 @@ stock covers in full to the ship status; status ids come from the API, never
 hard-coded. `ReturnSync` lists Allegro customer returns; the seller accepts each
 one onto own stock or leaves damaged goods out.
 
+**4d — Auto replies.** `AutoReplyEngine` (the *Messages* page) reads buyer
+messages and issues every five minutes. Every new message gets a confirmation
+with a deadline computed from the working hours (level 1). Safe questions -
+availability, dispatch date, tracking number, invoice, a fact quoted from the
+description - are answered from Allegro data by code, after a Claude classifier
+has named the topic with enough confidence (level 2); for the first seven days
+those answers wait as drafts. Everything else gets an AI draft the seller
+confirms, edits or rejects (level 3), with a Telegram ping. Issues never get an
+automatic answer on the merits. An outbound filter blocks links, phone numbers,
+e-mails, unknown amounts and forbidden words. Reminders go out at 18 and 22 hours
+without a real answer.
+
 **5 — List new products.** `OfferCreator` creates an offer for every sellable
 product that has none yet: it finds the product's Allegro catalogue card by EAN,
 copies delivery, returns, invoice, location and GPSR settings from a template
@@ -119,6 +131,7 @@ The shared library — no UI, no entry point.
 | `BundlePlan.cs` | Works out which offers should be packs, and of what size. Writes nothing |
 | `BundleConverter.cs` | Applies that plan — the only code that rewrites a live offer |
 | `OfferCreator.cs` | Creates offers for products that have none, from their catalogue card and a template offer |
+| `AutoReply.cs`, `AutoReplyEngine.cs`, `AllegroMessaging.cs` | Buyer messages: settings, working hours, the outbound filter, classification, answers, drafts, reminders; the messaging and issues API client |
 | `BaseLinker.cs`, `ReturnSync.cs` | Notes and statuses in BaseLinker orders; Allegro customer returns back onto own stock |
 | `OrderSync.cs` | Reads Allegro orders, writes them off against own stock, builds the purchase list and books the purchase |
 | `OwnStock.cs`, `StockPlanner.cs` | The seller's own stock with its move journal, and how it combines with the supplier's stock into an offer quantity and price |
