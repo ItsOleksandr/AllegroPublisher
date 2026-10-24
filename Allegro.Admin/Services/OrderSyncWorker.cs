@@ -19,13 +19,10 @@ public class OrderSyncWorker : BackgroundService
         {
             if (_allegro.Settings.IsConnected && !_allegro.IsSyncingOrders)
             {
-                try
+                var result = await _allegro.RunOrderCycleAsync();
+                foreach (var error in result.Errors)
                 {
-                    await _allegro.SyncOrdersAsync();
-                }
-                catch (Exception e)
-                {
-                    _logger.LogWarning("Order sync failed: {Message}", e.Message);
+                    _logger.LogWarning("Order cycle: {Message}", error);
                 }
             }
             await Task.Delay(Interval, stoppingToken);

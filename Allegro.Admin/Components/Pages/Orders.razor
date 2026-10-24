@@ -29,8 +29,8 @@
 
 <div class="card shadow-sm mb-4 no-print">
     <div class="card-body d-flex flex-wrap gap-3 align-items-center">
-        <button class="btn btn-outline-primary" disabled="@(!allegro.Settings.IsConnected || allegro.IsSyncingOrders)" @onclick="SyncNow">
-            @(allegro.IsSyncingOrders ? "Syncing..." : "Sync orders now")
+        <button class="btn btn-outline-primary" disabled="@(!allegro.Settings.IsConnected || allegro.IsSyncingOrders || _isSyncing)" @onclick="SyncNow">
+            @(_isSyncing || allegro.IsSyncingOrders ? "Syncing..." : "Sync orders, returns and BaseLinker now")
         </button>
         <div class="small text-muted">
             @if (_state.LastSyncAt == DateTime.MinValue)
@@ -110,7 +110,13 @@
                                 <td class="text-end">@row.Need</td>
                                 <td class="text-end">@row.Moq</td>
                                 <td class="text-end fw-bold">@row.Buy</td>
-                                <td class="text-end">@(row.Leftover > 0 ? row.Leftover.ToString() : "—")</td>
+                                <td class="text-end">
+                                    @(row.Leftover > 0 ? row.Leftover.ToString() : "—")
+                                    @if (row.Booked > 0)
+                                    {
+                                        <div class="small text-muted text-nowrap">@row.Booked already on stock</div>
+                                    }
+                                </td>
                                 <td class="text-end">@row.UnitPrice.ToString("0.00", CultureInfo.InvariantCulture)</td>
                                 <td class="text-end">@row.Total.ToString("0.00", CultureInfo.InvariantCulture)</td>
                                 <td class="text-end">@row.OrderIds.Count</td>
@@ -138,9 +144,164 @@
                 Quantities are pieces, rounded up to the supplier's minimum order across all open orders together.
                 After the trip, correct <em>Bought</em> where you bought more, less or nothing (0 keeps those orders
                 waiting for the next trip), then press <em>Bought</em>: what the orders need is set aside, the rest
-                goes to own stock at the paid price.
+                goes to own stock at the paid price. Leftovers marked <em>already on stock</em> were booked when the
+                order arrived; pressing <em>Bought</em> only corrects the difference.
             </div>
         }
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4 no-print">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-semibold">Customer returns</span>
+        <span class="small text-muted">@_returns.Count(r => r.Decision == ReturnDecision.Pending) waiting · @_returns.Count(r => r.Decision == ReturnDecision.Accepted) accepted · @_returns.Count(r => r.Decision == ReturnDecision.Rejected) rejected</span>
+    </div>
+    <div class="card-body p-0">
+        @if (_returns.Count == 0)
+        {
+            <div class="p-4 text-center text-muted">No customer returns in the last 30 days.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>When</th>
+                            <th>Return</th>
+                            <th>Buyer</th>
+                            <th>Items</th>
+                            <th style="width: 260px"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var ret in _returns.Take(50))
+                        {
+                            <tr>
+                                <td class="text-nowrap small">@ret.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td class="small">
+                                    <div><code>@ret.Reference</code></div>
+                                    @if (ret.OrderId.Length > 0)
+                                    {
+                                        <a href="https://salescenter.allegro.com/orders/@ret.OrderId" target="_blank" rel="noreferrer" class="text-decoration-none">order @ret.OrderId[..Math.Min(8, ret.OrderId.Length)]…</a>
+                                    }
+                                </td>
+                                <td class="small">@ret.Buyer</td>
+                                <td class="small">
+                                    @foreach (var item in ret.Items)
+                                    {
+                                        <div class="d-flex align-items-center gap-2 py-1">
+                                            <span>@item.Name <code>@item.Ean</code> × @item.Quantity@(item.Pack > 1 ? $" packs of {item.Pack}" : "")</span>
+                                            @if (item.Reason.Length > 0)
+                                            {
+                                                <span class="text-muted">· @item.Reason</span>
+                                            }
+                                            @if (ret.Decision == ReturnDecision.Pending)
+                                            {
+                                                <input class="form-control form-control-sm" style="width: 70px" type="number" min="0" max="@item.Quantity" @bind="_accept[ret.Id][item.OfferId]" />
+                                            }
+                                            else
+                                            {
+                                                <span class="badge @(item.Accepted > 0 ? "bg-success" : "bg-secondary")">@(item.Accepted > 0 ? $"{item.Accepted * item.Pack} pcs on stock" : "not accepted")</span>
+                                            }
+                                        </div>
+                                    }
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    @if (ret.Decision == ReturnDecision.Pending)
+                                    {
+                                        <button class="btn btn-sm btn-success" @onclick="() => AcceptReturn(ret)">Accept to stock</button>
+                                        <button class="btn btn-sm btn-outline-secondary ms-1" @onclick="() => RejectReturn(ret)">Damaged, don't</button>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge @(ret.Decision == ReturnDecision.Accepted ? "bg-success" : "bg-secondary")">@ret.Decision @ret.DecidedAt?.ToString("yyyy-MM-dd")</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4 no-print">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-semibold">BaseLinker</span>
+        <span class="badge @(_bl.Enabled && _bl.IsConfigured ? "bg-success" : "bg-secondary")">@(_bl.Enabled && _bl.IsConfigured ? "On" : "Off")</span>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            Every tracked order gets a note in its BaseLinker order, e.g. <code>MAGAZYN: XA095 ×1 | KUPIĆ: XJ4564 ×2 (allenett, min 2)</code>.
+            An order covered entirely by own stock is moved to the ship status. Nothing is sent to the buyer and no delivery or
+            payment data is touched. The token is generated in Base.com → Moje konto → API.
+        </p>
+        <div class="row g-3">
+            <div class="col-12 col-md-6">
+                <label class="form-label" for="blToken">API token</label>
+                <input id="blToken" class="form-control" type="password" @bind="_bl.Token" />
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label" for="blField">Where to write the note</label>
+                <select id="blField" class="form-select" @bind="_bl.NoteField">
+                    <option value="admin_comments">Admin comments</option>
+                    <option value="extra_field_1">Extra field 1</option>
+                    <option value="extra_field_2">Extra field 2</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-3 d-flex align-items-end">
+                <div class="form-check mb-2">
+                    <input id="blEnabled" class="form-check-input" type="checkbox" @bind="_bl.Enabled" />
+                    <label class="form-check-label" for="blEnabled">Enabled</label>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <label class="form-label" for="blShip">Status when everything is on own stock</label>
+                <select id="blShip" class="form-select" @bind="_bl.ShipStatusId" disabled="@(_blStatuses.Count == 0)">
+                    <option value="0">— not set —</option>
+                    @foreach (var st in _blStatuses)
+                    {
+                        <option value="@st.Id">@st.Name</option>
+                    }
+                </select>
+                @if (_blStatuses.Count == 0 && _bl.ShipStatusName.Length > 0)
+                {
+                    <div class="form-text">Now: @_bl.ShipStatusName (@_bl.ShipStatusId)</div>
+                }
+            </div>
+            <div class="col-12 col-md-4">
+                <label class="form-label" for="blBuy">Status "buy at allenett" (for reference)</label>
+                <select id="blBuy" class="form-select" @bind="_bl.BuyStatusId" disabled="@(_blStatuses.Count == 0)">
+                    <option value="0">— not set —</option>
+                    @foreach (var st in _blStatuses)
+                    {
+                        <option value="@st.Id">@st.Name</option>
+                    }
+                </select>
+                @if (_blStatuses.Count == 0 && _bl.BuyStatusName.Length > 0)
+                {
+                    <div class="form-text">Now: @_bl.BuyStatusName (@_bl.BuyStatusId)</div>
+                }
+            </div>
+            <div class="col-12 col-md-4 d-flex align-items-end gap-2">
+                <button class="btn btn-outline-secondary" disabled="@(string.IsNullOrWhiteSpace(_bl.Token) || _isLoadingStatuses)" @onclick="LoadStatuses">
+                    @(_isLoadingStatuses ? "Loading..." : "Load statuses")
+                </button>
+                <button class="btn btn-primary" @onclick="SaveBaseLinker">Save</button>
+            </div>
+        </div>
+        <div class="small text-muted mt-3">
+            @if (_bl.LastSyncAt != DateTime.MinValue)
+            {
+                <span>Last run @_bl.LastSyncAt.ToString("yyyy-MM-dd HH:mm").</span>
+            }
+            @if (_bl.LastError.Length > 0)
+            {
+                <span class="text-danger"> Last error: @_bl.LastError</span>
+            }
+        </div>
     </div>
 </div>
 
@@ -192,6 +353,10 @@
                                             {
                                                 <span class="badge @(line.PurchasedAt is null ? "bg-warning text-dark" : "bg-success")">@line.ToBuy @(line.PurchasedAt is null ? "to buy" : "bought")</span>
                                             }
+                                            @if (line.Booked > 0)
+                                            {
+                                                <span class="badge bg-info text-dark">+@line.Booked leftover on stock</span>
+                                            }
                                         </div>
                                     }
                                 </td>
@@ -200,6 +365,10 @@
                                     @if (order.Status == OrderStatus.Cancelled && order.Note.Length > 0)
                                     {
                                         <div class="small text-muted">@order.Note</div>
+                                    }
+                                    @if (order.BaseLinkerMarkedAt is not null)
+                                    {
+                                        <div class="small text-muted" title="@order.BaseLinkerNote">BaseLinker @order.BaseLinkerOrderId ✓</div>
                                     }
                                 </td>
                             </tr>
@@ -217,6 +386,12 @@
     private List<PurchaseRow> _purchase = new();
     private Dictionary<string, BoughtVm> _bought = new(StringComparer.OrdinalIgnoreCase);
     private bool _isConfirming;
+    private bool _isSyncing;
+    private List<TrackedReturn> _returns = new();
+    private Dictionary<string, Dictionary<string, int>> _accept = new();
+    private BaseLinkerSettings _bl = new();
+    private List<BaseLinkerStatus> _blStatuses = new();
+    private bool _isLoadingStatuses;
 
     private sealed class BoughtVm
     {
@@ -234,6 +409,64 @@
         _orders = OrderSync.Orders().Values.OrderByDescending(o => o.OccurredAt).ToList();
         _purchase = OrderSync.PurchaseList();
         _bought = _purchase.ToDictionary(r => r.Ean, r => new BoughtVm { Quantity = r.Buy, UnitCost = r.UnitPrice > 0 ? r.UnitPrice : null }, StringComparer.OrdinalIgnoreCase);
+        _returns = ReturnSync.Returns().Values.OrderBy(r => r.Decision != ReturnDecision.Pending).ThenByDescending(r => r.CreatedAt).ToList();
+        _accept = _returns.ToDictionary(r => r.Id, r => r.Items.ToDictionary(i => i.OfferId, i => i.Quantity));
+        _bl = BaseLinkerSync.Settings();
+    }
+
+    private void AcceptReturn(TrackedReturn ret)
+    {
+        try
+        {
+            allegro.AcceptReturn(ret.Id, _accept[ret.Id]);
+            toastService.ShowSuccess($"Return {ret.Reference} accepted to own stock.");
+            Load();
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+    }
+
+    private void RejectReturn(TrackedReturn ret)
+    {
+        ReturnSync.Reject(ret.Id);
+        toastService.ShowInfo($"Return {ret.Reference} left off the stock.");
+        Load();
+    }
+
+    private async Task LoadStatuses()
+    {
+        _isLoadingStatuses = true;
+        try
+        {
+            _blStatuses = await allegro.LoadBaseLinkerStatusesAsync(_bl.Token.Trim());
+            toastService.ShowInfo($"{_blStatuses.Count} BaseLinker statuses loaded.");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
+        finally
+        {
+            _isLoadingStatuses = false;
+        }
+    }
+
+    private void SaveBaseLinker()
+    {
+        try
+        {
+            _bl.Token = _bl.Token.Trim();
+            _bl.ShipStatusName = _blStatuses.FirstOrDefault(s => s.Id == _bl.ShipStatusId)?.Name ?? (_bl.ShipStatusId == 0 ? "" : _bl.ShipStatusName);
+            _bl.BuyStatusName = _blStatuses.FirstOrDefault(s => s.Id == _bl.BuyStatusId)?.Name ?? (_bl.BuyStatusId == 0 ? "" : _bl.BuyStatusName);
+            BaseLinkerSync.Save(_bl);
+            toastService.ShowSuccess("BaseLinker settings saved.");
+        }
+        catch (Exception e)
+        {
+            toastService.ShowError(e.Message);
+        }
     }
 
     private static string StatusCss(string status) => status switch
@@ -246,14 +479,22 @@
 
     private async Task SyncNow()
     {
+        _isSyncing = true;
         try
         {
-            var handled = await allegro.SyncOrdersAsync();
-            toastService.ShowSuccess($"Orders synced: {handled} new events handled.");
+            var result = await allegro.RunOrderCycleAsync();
+            if (result.Errors.Count > 0)
+            {
+                toastService.ShowError(string.Join(" · ", result.Errors));
+            }
+            else
+            {
+                toastService.ShowSuccess($"{result.Orders} order events handled, {result.Returns} new returns, {result.Marked} BaseLinker orders marked.");
+            }
         }
-        catch (Exception e)
+        finally
         {
-            toastService.ShowError(e.Message);
+            _isSyncing = false;
         }
         Load();
     }

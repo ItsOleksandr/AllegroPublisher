@@ -68,10 +68,19 @@ the last one can be undone.
 stream (`/order/events`, polled every five minutes by the admin panel). A paid
 order is split line by line: whatever own stock can cover is written off at once
 (`order` moves), the rest lands on the purchase list, which rounds the total need
-of all open orders up to the supplier's minimum order. After the trip the seller
-presses *Bought*; what the orders need is set aside, the surplus goes to own
-stock at the paid price (`purchase`). A cancelled order gives its pieces back.
+of all open orders up to the supplier's minimum order. With `AutoBookPurchases` (the default) the
+surplus of each order's minimum-order purchase is booked on own stock the moment
+the order arrives; after the trip the seller presses *Bought* and only the
+difference against what was really bought is corrected. A cancelled order gives
+its pieces back and undoes its advance booking.
 Needs the `allegro:api:orders:read` scope on the Allegro app.
+
+**4c — BaseLinker and returns.** The seller works orders in BaseLinker, so
+`BaseLinkerSync` writes a `MAGAZYN: … | KUPIĆ: …` note into each matching
+BaseLinker order (matched by the Allegro order id) and moves an order that own
+stock covers in full to the ship status; status ids come from the API, never
+hard-coded. `ReturnSync` lists Allegro customer returns; the seller accepts each
+one onto own stock or leaves damaged goods out.
 
 **5 — List new products.** `OfferCreator` creates an offer for every sellable
 product that has none yet: it finds the product's Allegro catalogue card by EAN,
@@ -110,6 +119,7 @@ The shared library — no UI, no entry point.
 | `BundlePlan.cs` | Works out which offers should be packs, and of what size. Writes nothing |
 | `BundleConverter.cs` | Applies that plan — the only code that rewrites a live offer |
 | `OfferCreator.cs` | Creates offers for products that have none, from their catalogue card and a template offer |
+| `BaseLinker.cs`, `ReturnSync.cs` | Notes and statuses in BaseLinker orders; Allegro customer returns back onto own stock |
 | `OrderSync.cs` | Reads Allegro orders, writes them off against own stock, builds the purchase list and books the purchase |
 | `OwnStock.cs`, `StockPlanner.cs` | The seller's own stock with its move journal, and how it combines with the supplier's stock into an offer quantity and price |
 | `ContentGenerator.cs`, `ContentApplier.cs`, `AutoContent.cs` | AI titles and descriptions: generate, review, apply |

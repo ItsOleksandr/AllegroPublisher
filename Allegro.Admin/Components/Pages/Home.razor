@@ -120,6 +120,14 @@
                             stock plus what lies in own stock.
                         </div>
                     </div>
+                    <div class="col-6">
+                        <label class="form-label" for="sellOffInput">Sell-off multiplier for own stock</label>
+                        <input id="sellOffInput" class="form-control" type="number" min="0" step="0.1" @bind="_listingOptions.SellOffMultiplier" />
+                        <div class="form-text">
+                            When a product is sold from own stock because the supplier no longer has it, its price is the
+                            purchase cost × this, instead of the usual tiers. Lower it to clear the shelf faster. 0 = use the tiers.
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="mb-3">
@@ -471,6 +479,18 @@
                         <div class="form-text">
                             After every parse, offers are created for all products that have none yet and can be listed
                             automatically (see the list below). Needs the template offer to be set.
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <div class="form-check">
+                            <input id="autoBookCheck" class="form-check-input" type="checkbox" @bind="_listingOptions.AutoBookPurchases" />
+                            <label class="form-check-label" for="autoBookCheck">Book purchase leftovers as soon as an order arrives</label>
+                        </div>
+                        <div class="form-text">
+                            When an order needs more than own stock holds, the rest is assumed bought at the supplier's minimum
+                            order and the surplus goes to <a href="/stock">My stock</a> at once. <em>Bought</em> on the
+                            <a href="/orders">Orders</a> page then only corrects the difference. Off: nothing reaches own stock
+                            until <em>Bought</em> is pressed.
                         </div>
                     </div>
                     <div class="col-12 col-md-6">

@@ -7,6 +7,8 @@ public class ListingOptions
     public int BundleFromQuantity { get; set; } = 5;
     public int StaleAfterHours { get; set; } = 48;
     public bool AddOwnStockToSupplier { get; set; } = false;
+    public bool AutoBookPurchases { get; set; } = true;
+    public decimal SellOffMultiplier { get; set; } = 0m;
     public string NewOfferTemplateId { get; set; } = "";
     public bool AutoCreateOffers { get; set; } = true;
     public bool AiCheckNewOffers { get; set; } = true;

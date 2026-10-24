@@ -40,7 +40,10 @@ public static class StockPlanner
             {
                 return new PlannedListing(product, ean, 0, 0m, pack, 0, ownUnits, true, "own stock without a unit cost and no supplier price");
             }
-            return new PlannedListing(product, ean, ownPacks, options.GetOfferPrice(product, pack, unit), pack, 0, ownUnits, true, null);
+            var price = options.SellOffMultiplier > 0
+                ? Math.Round(unit * pack * options.SellOffMultiplier, 2, MidpointRounding.AwayFromZero)
+                : options.GetOfferPrice(product, pack, unit);
+            return new PlannedListing(product, ean, ownPacks, price, pack, 0, ownUnits, true, null);
         }
 
         var warning = ownUnits > 0 && pack > 1 ? $"own stock {ownUnits} is less than one pack of {pack}" : null;

@@ -239,4 +239,41 @@ public class AllegroPublishService
     }
 
     public int ConfirmPurchase(IEnumerable<OrderSync.Bought> bought) => OrderSync.ConfirmPurchase(bought, Log);
+
+    public record OrderRunResult(int Orders, int Returns, int Marked, List<string> Errors);
+
+    public async Task<OrderRunResult> RunOrderCycleAsync()
+    {
+        var errors = new List<string>();
+        int orders = 0, returns = 0, marked = 0;
+        try
+        {
+            orders = await SyncOrdersAsync();
+        }
+        catch (Exception e)
+        {
+            errors.Add($"orders: {e.Message}");
+        }
+        try
+        {
+            returns = await new ReturnSync(_publisher).SyncAsync(Log);
+        }
+        catch (Exception e)
+        {
+            errors.Add($"returns: {e.Message}");
+        }
+        try
+        {
+            marked = await new BaseLinkerSync().SyncAsync(Log);
+        }
+        catch (Exception e)
+        {
+            errors.Add($"BaseLinker: {e.Message}");
+        }
+        return new OrderRunResult(orders, returns, marked, errors);
+    }
+
+    public Task<List<BaseLinkerStatus>> LoadBaseLinkerStatusesAsync(string token) => new BaseLinkerClient(token).GetStatusesAsync();
+
+    public void AcceptReturn(string id, Dictionary<string, int> accepted) => ReturnSync.Accept(id, accepted, Log);
 }

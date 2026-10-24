@@ -74,4 +74,6 @@ public static class SaverExtensions
     public static readonly Saver<List<StockMove>> StockMoves = new Saver<List<StockMove>>("stock_moves.txt");
     public static readonly Saver<Dictionary<string, TrackedOrder>> Orders = new Saver<Dictionary<string, TrackedOrder>>("orders.txt");
     public static readonly Saver<OrderSyncState> OrderSync = new Saver<OrderSyncState>("order_sync.txt");
+    public static readonly Saver<BaseLinkerSettings> BaseLinker = new Saver<BaseLinkerSettings>("baselinker_settings.txt");
+    public static readonly Saver<Dictionary<string, TrackedReturn>> Returns = new Saver<Dictionary<string, TrackedReturn>>("returns.txt");
 }

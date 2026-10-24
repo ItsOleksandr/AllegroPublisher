@@ -11,6 +11,9 @@ public class TrackedOrder
     public string Status { get; set; } = OrderStatus.Open;
     public List<OrderLine> Lines { get; set; } = new();
     public string Note { get; set; } = "";
+    public string BaseLinkerOrderId { get; set; } = "";
+    public DateTime? BaseLinkerMarkedAt { get; set; }
+    public string BaseLinkerNote { get; set; } = "";
 }
 
 public class OrderLine
@@ -23,6 +26,7 @@ public class OrderLine
     public int Need { get; set; }
     public int FromOwn { get; set; }
     public int ToBuy { get; set; }
+    public int Booked { get; set; }
     public DateTime? PurchasedAt { get; set; }
 }
 
@@ -48,6 +52,7 @@ public record PurchaseRow(
     int Moq,
     int Buy,
     int Leftover,
+    int Booked,
     decimal UnitPrice,
     List<string> OrderIds,
     bool SupplierHas)
@@ -193,6 +198,8 @@ public sealed class OrderSync
         }
 
         var bundles = SaverExtensions.Bundles.Read();
+        var options = SaverExtensions.ListingOptions.Read();
+        var products = StockPlanner.ProductsByEan(SaverExtensions.Products.Read().Values);
         var order = new TrackedOrder
         {
             Id = checkoutId,
@@ -239,6 +246,18 @@ public sealed class OrderSync
                     var left = OwnStock.Adjust(ean, -fromOwn, StockReason.Order, checkoutId, $"{line.Name}".Trim());
                     own[ean] = left;
                 }
+                if (options.AutoBookPurchases && line.ToBuy > 0)
+                {
+                    products.TryGetValue(ean, out var product);
+                    var moq = Math.Max(product?.MinOrderQuantity ?? 1, 1);
+                    var buy = (line.ToBuy + moq - 1) / moq * moq;
+                    line.Booked = buy - line.ToBuy;
+                    if (line.Booked > 0)
+                    {
+                        own[ean] = OwnStock.Adjust(ean, line.Booked, StockReason.Purchase, checkoutId,
+                            $"auto: buy {buy} (min {moq}), order needs {line.ToBuy}", product?.Price > 0 ? product.Price : null);
+                    }
+                }
                 order.Lines.Add(line);
             }
 
@@ -252,7 +271,8 @@ public sealed class OrderSync
         }
 
         log?.Invoke($"Order {checkoutId} ({order.Buyer}): {order.Lines.Count} of our lines, " +
-                    $"{order.Lines.Sum(l => l.FromOwn)} pcs taken from own stock, {order.Lines.Sum(l => l.ToBuy)} pcs to buy.");
+                    $"{order.Lines.Sum(l => l.FromOwn)} pcs taken from own stock, {order.Lines.Sum(l => l.ToBuy)} pcs to buy, " +
+                    $"{order.Lines.Sum(l => l.Booked)} pcs of leftovers booked on own stock in advance.");
         return true;
     }
 
@@ -276,6 +296,11 @@ public sealed class OrderSync
                         line.PurchasedAt is null ? $"order {why}" : $"order {why} after purchase");
                     returned += back;
                 }
+                if (line.PurchasedAt is null && line.Booked > 0)
+                {
+                    OwnStock.Adjust(line.Ean, -line.Booked, StockReason.Correction, checkoutId, $"order {why}: advance booking undone");
+                    line.Booked = 0;
+                }
             }
 
             order.Status = OrderStatus.Cancelled;
@@ -292,14 +317,15 @@ public sealed class OrderSync
         var options = SaverExtensions.ListingOptions.Read();
         var products = StockPlanner.ProductsByEan(SaverExtensions.Products.Read().Values);
         var own = OwnStock.Items();
-        var rows = new Dictionary<string, (int Need, List<string> Orders, string Name)>(StringComparer.OrdinalIgnoreCase);
+        var rows = new Dictionary<string, (int Need, int Booked, List<string> Orders, string Name)>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var order in Orders().Values.Where(o => o.Status == OrderStatus.Open).OrderBy(o => o.OccurredAt))
         {
             foreach (var line in order.Lines.Where(l => l.ToBuy > 0 && l.PurchasedAt is null))
             {
-                var entry = rows.TryGetValue(line.Ean, out var found) ? found : (Need: 0, Orders: new List<string>(), Name: line.Name);
+                var entry = rows.TryGetValue(line.Ean, out var found) ? found : (Need: 0, Booked: 0, Orders: new List<string>(), Name: line.Name);
                 entry.Need += line.ToBuy;
+                entry.Booked += line.Booked;
                 entry.Orders.Add(order.Id);
                 rows[line.Ean] = entry;
             }
@@ -312,7 +338,7 @@ public sealed class OrderSync
             var moq = Math.Max(product?.MinOrderQuantity ?? 1, 1);
             var buy = (entry.Need + moq - 1) / moq * moq;
             var price = product?.Price > 0 ? product.Price : own.TryGetValue(ean, out var stock) ? stock.UnitCost ?? 0m : 0m;
-            result.Add(new PurchaseRow(ean, product?.Name ?? entry.Name, product, entry.Need, moq, buy, buy - entry.Need, price,
+            result.Add(new PurchaseRow(ean, product?.Name ?? entry.Name, product, entry.Need, moq, buy, buy - entry.Need, entry.Booked, price,
                 entry.Orders.Distinct().ToList(), product is not null && StockPlanner.SupplierHas(product, options)));
         }
         return result.OrderBy(r => r.Name).ToList();
@@ -329,27 +355,39 @@ public sealed class OrderSync
             var now = DateTime.Now;
             foreach (var item in bought)
             {
-                if (item.Quantity <= 0)
-                {
-                    continue;
-                }
-
                 var lines = orders.Values.Where(o => o.Status == OrderStatus.Open)
                     .SelectMany(o => o.Lines.Where(l => l.Ean.Equals(item.Ean, StringComparison.OrdinalIgnoreCase) && l.ToBuy > 0 && l.PurchasedAt is null))
                     .ToList();
                 var need = lines.Sum(l => l.ToBuy);
+                var booked = lines.Sum(l => l.Booked);
                 if (need == 0)
                 {
                     continue;
                 }
 
-                OwnStock.Adjust(item.Ean, item.Quantity - need, StockReason.Purchase, "", $"bought {item.Quantity}, needed {need}", item.UnitCost);
+                if (item.Quantity <= 0)
+                {
+                    if (booked > 0)
+                    {
+                        OwnStock.Adjust(item.Ean, -booked, StockReason.Correction, "", $"not bought: advance booking of {booked} undone");
+                        foreach (var line in lines)
+                        {
+                            line.Booked = 0;
+                        }
+                        log?.Invoke($"{item.Ean}: not bought, {booked} pcs booked in advance taken off own stock; the orders wait.");
+                    }
+                    continue;
+                }
+
+                var delta = item.Quantity - need - booked;
+                OwnStock.Adjust(item.Ean, delta, StockReason.Purchase, "",
+                    booked > 0 ? $"bought {item.Quantity}, needed {need}, {booked} already booked" : $"bought {item.Quantity}, needed {need}", item.UnitCost);
                 foreach (var line in lines)
                 {
                     line.PurchasedAt = now;
                 }
                 done++;
-                log?.Invoke($"{item.Ean}: bought {item.Quantity}, {need} go to orders, {item.Quantity - need:+#;-#;0} to own stock.");
+                log?.Invoke($"{item.Ean}: bought {item.Quantity}, {need} go to orders, {delta:+#;-#;0} to own stock on top of {booked} booked.");
             }
 
             foreach (var order in orders.Values.Where(o => o.Status == OrderStatus.Open))
