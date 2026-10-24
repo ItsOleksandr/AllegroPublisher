@@ -220,7 +220,7 @@ public sealed class OrderSync
             foreach (var item in form["lineItems"]?.AsArray() ?? new JsonArray())
             {
                 var ean = item?["offer"]?["external"]?["id"]?.ToString()?.Trim() ?? "";
-                if (ean.Length == 0)
+                if (ean.Length == 0 || (!IsOurs(ean) && !own.ContainsKey(ean)))
                 {
                     continue;
                 }
@@ -263,7 +263,7 @@ public sealed class OrderSync
 
             if (order.Lines.Count == 0)
             {
-                order.Note = "no line with our external id";
+                order.Note = "no line with our external id (EAN)";
             }
             orders[checkoutId] = order;
             SaverExtensions.Orders.Value = orders;
@@ -402,6 +402,9 @@ public sealed class OrderSync
         }
         return done;
     }
+
+    public static bool IsOurs(string externalId) =>
+        externalId.Length is >= 8 and <= 14 && externalId.All(char.IsDigit);
 
     public static DateTime NextTrip(DateTime from)
     {

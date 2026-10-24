@@ -723,12 +723,20 @@ public class AllegroPublisher
     /// Used by <see cref="BundleProbe"/> to inspect products, categories and existing offers without
     /// parsing them into DTOs first. Never throws on a non-2xx - the caller decides what that means.
     /// </summary>
-    public async Task<(int Status, string Body)> GetRawAsync(string path)
+    public const string BetaMediaType = "application/vnd.allegro.beta.v1+json";
+
+    public async Task<(int Status, string Body)> GetRawAsync(string path, string? accept = null)
     {
         await EnsureValidTokenAsync();
 
         var url = path.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? path : $"{ApiBase}{path}";
-        var response = await _http.SendAsync(CreateApiRequest(HttpMethod.Get, url));
+        var request = CreateApiRequest(HttpMethod.Get, url);
+        if (accept is not null)
+        {
+            request.Headers.Accept.Clear();
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(accept));
+        }
+        var response = await _http.SendAsync(request);
         return ((int)response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 

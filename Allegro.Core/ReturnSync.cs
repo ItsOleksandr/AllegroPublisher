@@ -64,7 +64,8 @@ public sealed class ReturnSync
         for (int offset = 0; ; offset += PageSize)
         {
             var (status, body) = await _publisher.GetRawAsync(
-                $"/order/customer-returns?limit={PageSize}&offset={offset}&createdAt.gte={Uri.EscapeDataString(since.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture))}");
+                $"/order/customer-returns?limit={PageSize}&offset={offset}&createdAt.gte={Uri.EscapeDataString(since.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture))}",
+                AllegroPublisher.BetaMediaType);
             if (status is < 200 or >= 300)
             {
                 throw new InvalidOperationException($"could not read customer returns ({status}): {(body.Length > 300 ? body[..300] : body)}");
