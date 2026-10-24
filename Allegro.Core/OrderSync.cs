@@ -84,6 +84,7 @@ public sealed class OrderSync
 
     public async Task<int> SyncAsync(Action<string>? log = null)
     {
+        DropForeignLines(log);
         var state = SaverExtensions.OrderSync.Read();
         try
         {
@@ -401,6 +402,32 @@ public sealed class OrderSync
             SaverExtensions.Orders.Write();
         }
         return done;
+    }
+
+    private static void DropForeignLines(Action<string>? log)
+    {
+        lock (Gate)
+        {
+            var orders = SaverExtensions.Orders.Read();
+            var own = OwnStock.Items();
+            var removed = 0;
+            foreach (var order in orders.Values)
+            {
+                var kept = order.Lines.Where(l => IsOurs(l.Ean) || own.ContainsKey(l.Ean)).ToList();
+                removed += order.Lines.Count - kept.Count;
+                order.Lines = kept;
+                if (kept.Count == 0 && order.Note.Length == 0)
+                {
+                    order.Note = "no line with our external id (EAN)";
+                }
+            }
+            if (removed > 0)
+            {
+                SaverExtensions.Orders.Value = orders;
+                SaverExtensions.Orders.Write();
+                log?.Invoke($"Dropped {removed} order line(s) whose external id is not an EAN (listed by another tool).");
+            }
+        }
     }
 
     public static bool IsOurs(string externalId) =>
