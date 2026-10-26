@@ -8,6 +8,7 @@ namespace Allegro.Core;
 
 public sealed class AutoReplyEngine
 {
+    private const int MaxMessageAgeHours = 48;
     private readonly AllegroMessaging _api;
     private AiClient? _ai;
 
@@ -154,7 +155,17 @@ public sealed class AutoReplyEngine
 
     private async Task ScanThreadsAsync(AutoReplySettings settings, Counters counters, Action<string>? log)
     {
-        var threads = await _api.ListThreadsAsync(50);
+        var threads = new List<JsonNode?>();
+        for (int offset = 0; offset < 60; offset += 20)
+        {
+            var page = await _api.ListThreadsAsync(20, offset);
+            threads.AddRange(page);
+            if (page.Count < 20)
+            {
+                break;
+            }
+        }
+        var cutoff = DateTime.Now.AddHours(-MaxMessageAgeHours);
         foreach (var node in threads)
         {
             var id = node?["id"]?.ToString() ?? "";
@@ -166,6 +177,11 @@ public sealed class AutoReplyEngine
             var tracked = AutoReplyStore.Get(id);
             if (tracked is not null && lastAt <= tracked.SeenAt)
             {
+                continue;
+            }
+            if (tracked is null && lastAt < cutoff)
+            {
+                AutoReplyStore.Put(new MessageThread { Id = id, Kind = "thread", SeenAt = lastAt, Buyer = node?["interlocutor"]?["login"]?.ToString() ?? "", Status = ThreadStatus.Rejected, AnsweredAt = lastAt });
                 continue;
             }
 
@@ -225,6 +241,11 @@ public sealed class AutoReplyEngine
             }
 
             var tracked = AutoReplyStore.Get("issue:" + id);
+            var issueAt = ParseDate(node?["updatedAt"]?.ToString() ?? node?["createdAt"]?.ToString());
+            if (tracked is null && issueAt is not null && issueAt < DateTime.Now.AddHours(-MaxMessageAgeHours))
+            {
+                continue;
+            }
             var chat = await _api.IssueChatAsync(id);
             var latest = chat
                 .Where(m => (m?["author"]?["role"]?.ToString() ?? "").Equals("BUYER", StringComparison.OrdinalIgnoreCase))
