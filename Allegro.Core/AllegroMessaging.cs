@@ -38,14 +38,15 @@ public sealed class AllegroMessaging
     }
 
     public async Task<JsonArray> ListIssuesAsync(int limit = 100) =>
-        (await GetAsync($"/sale/issues?limit={limit}&offset=0"))?["issues"]?.AsArray() ?? new JsonArray();
+        (await GetAsync($"/sale/issues?limit={limit}&offset=0", AllegroPublisher.BetaMediaType))?["issues"]?.AsArray() ?? new JsonArray();
 
     public async Task<JsonArray> IssueChatAsync(string issueId) =>
-        (await GetAsync($"/sale/issues/{Uri.EscapeDataString(issueId)}/chat"))?["messages"]?.AsArray() ?? new JsonArray();
+        (await GetAsync($"/sale/issues/{Uri.EscapeDataString(issueId)}/chat", AllegroPublisher.BetaMediaType))?["messages"]?.AsArray() ?? new JsonArray();
 
     public async Task PostIssueMessageAsync(string issueId, string text)
     {
-        var (status, response) = await _publisher.SendJsonRawAsync(HttpMethod.Post, $"/sale/issues/{Uri.EscapeDataString(issueId)}/message", JsonSerializer.Serialize(new { text }));
+        var (status, response) = await _publisher.SendJsonRawAsync(HttpMethod.Post, $"/sale/issues/{Uri.EscapeDataString(issueId)}/message",
+            JsonSerializer.Serialize(new { text }), AllegroPublisher.BetaMediaType);
         if (status is < 200 or >= 300)
         {
             throw new InvalidOperationException($"could not answer the issue ({status}): {Trim(response)}");
@@ -64,9 +65,9 @@ public sealed class AllegroMessaging
 
     public Task<JsonNode?> OfferAsync(string offerId) => TryGetAsync($"/sale/product-offers/{Uri.EscapeDataString(offerId)}");
 
-    private async Task<JsonNode?> GetAsync(string path)
+    private async Task<JsonNode?> GetAsync(string path, string? accept = null)
     {
-        var (status, body) = await _publisher.GetRawAsync(path);
+        var (status, body) = await _publisher.GetRawAsync(path, accept);
         if (status is < 200 or >= 300)
         {
             throw new InvalidOperationException($"GET {path.Split('?')[0]} failed ({status}): {Trim(body)}");

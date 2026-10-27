@@ -745,14 +745,19 @@ public class AllegroPublisher
     /// Like <see cref="GetRawAsync"/> it never throws on a non-2xx: callers that are probing what the
     /// API will accept need to read the validation errors, not catch an exception.
     /// </summary>
-    public async Task<(int Status, string Body)> SendJsonRawAsync(HttpMethod method, string path, string json)
+    public async Task<(int Status, string Body)> SendJsonRawAsync(HttpMethod method, string path, string json, string? mediaType = null)
     {
         await EnsureValidTokenAsync();
 
         var url = path.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? path : $"{ApiBase}{path}";
         var request = CreateApiRequest(method, url);
+        if (mediaType is not null)
+        {
+            request.Headers.Accept.Clear();
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(mediaType));
+        }
         var content = new StringContent(json, Encoding.UTF8);
-        content.Headers.ContentType = new MediaTypeHeaderValue(ApiMediaType);
+        content.Headers.ContentType = new MediaTypeHeaderValue(mediaType ?? ApiMediaType);
         request.Content = content;
 
         var response = await _http.SendAsync(request);
