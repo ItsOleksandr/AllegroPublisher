@@ -64,9 +64,9 @@
 {
     <div class="alert alert-warning py-2">Auto replies are <strong>off</strong>. Nothing is read from Allegro until you enable them in the settings below.</div>
 }
-else if (_settings.InTestMode(DateTime.Now))
+else if (_settings.InTestMode())
 {
-    <div class="alert alert-info py-2">Test mode until <strong>@_settings.TestModeUntil.ToString("yyyy-MM-dd HH:mm")</strong>: full answers are not sent automatically, they wait here as drafts. Confirmations (level 1) go out as usual.</div>
+    <div class="alert alert-info py-2"><strong>Test mode</strong>: full answers are not sent automatically, they wait here as drafts. Confirmations (level 1) go out as usual.</div>
 }
 @if (_settings.LastError.Length > 0)
 {
@@ -186,6 +186,19 @@ else if (_settings.InTestMode(DateTime.Now))
                 }
                 <label class="form-label mt-2 mb-0 small" for="within">Promise an answer within (working hours)</label>
                 <input id="within" class="form-control form-control-sm" type="number" min="1" max="12" @bind="_settings.ReplyWithinHours" />
+                <div class="small fw-semibold mt-2 mb-1">Dispatch days</div>
+                <div class="d-flex flex-wrap gap-2">
+                    @for (int i = 1; i <= 7; i++)
+                    {
+                        var d = i % 7;
+                        var id = "ship" + d;
+                        <div class="form-check form-check-inline m-0">
+                            <input id="@id" class="form-check-input" type="checkbox" checked="@_settings.ShipDays.Contains(d)" @onchange="e => ToggleShipDay(d, e)" />
+                            <label class="form-check-label small" for="@id">@DayNames[i - 1]</label>
+                        </div>
+                    }
+                </div>
+                <div class="form-text">Buyers are told parcels go out on these days; "when will you ship" is answered with the next one after payment.</div>
             </div>
             <div class="col-12 col-md-3">
                 <label class="form-label mb-0 small" for="ack">Confirmation text ({termin} = deadline)</label>
@@ -219,9 +232,11 @@ else if (_settings.InTestMode(DateTime.Now))
                 <input id="seller" class="form-control form-control-sm mb-2" @bind="_settings.SellerName" />
             </div>
             <div class="col-12 col-md-3">
-                <label class="form-label mb-0 small" for="test">Test mode until</label>
-                <input id="test" class="form-control form-control-sm mb-1" type="datetime-local" @bind="_settings.TestModeUntil" />
-                <div class="form-text">Set automatically to @_settings.TestDays days ahead when auto replies are first enabled. Clear or move it back to start sending level 2 answers.</div>
+                <div class="form-check mt-md-4">
+                    <input id="test" class="form-check-input" type="checkbox" @bind="_settings.TestMode" />
+                    <label class="form-check-label" for="test">Test mode</label>
+                </div>
+                <div class="form-text">While on, level 2 answers are kept here as drafts instead of being sent. Off = answers go to buyers.</div>
             </div>
         </div>
         <div class="small text-muted mt-3">
@@ -342,14 +357,22 @@ else if (_settings.InTestMode(DateTime.Now))
         Load();
     }
 
+    private void ToggleShipDay(int day, ChangeEventArgs e)
+    {
+        if (e.Value is true)
+        {
+            if (!_settings.ShipDays.Contains(day)) _settings.ShipDays.Add(day);
+        }
+        else
+        {
+            _settings.ShipDays.Remove(day);
+        }
+    }
+
     private void SaveSettings()
     {
         try
         {
-            if (_settings.Enabled && _settings.TestModeUntil == DateTime.MinValue)
-            {
-                _settings.TestModeUntil = DateTime.Now.AddDays(_settings.TestDays);
-            }
             AutoReplyStore.Save(_settings);
             toastService.ShowSuccess("Settings saved.");
             Load();

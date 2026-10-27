@@ -31,8 +31,8 @@ public class AutoReplySettings
     public string InvoiceText { get; set; } = "Tak, wystawiamy fakturę (sprzedawca zwolniony z VAT, art. 113). Prosimy o podanie danych do faktury w formularzu zamówienia lub w wiadomości.";
     public double ConfidenceThreshold { get; set; } = 0.85;
     public int ReplyWithinHours { get; set; } = 3;
-    public int TestDays { get; set; } = 7;
-    public DateTime TestModeUntil { get; set; } = DateTime.MinValue;
+    public List<int> ShipDays { get; set; } = new() { 1, 3, 5 };
+    public bool TestMode { get; set; }
     public int RateLimitMinutes { get; set; } = 10;
     public string ClassifierModel { get; set; } = "claude-haiku-5-5";
     public string DraftModel { get; set; } = "claude-sonnet-5-5";
@@ -50,7 +50,16 @@ public class AutoReplySettings
     public DateTime LastRunAt { get; set; } = DateTime.MinValue;
     public string LastError { get; set; } = "";
 
-    public bool InTestMode(DateTime now) => TestModeUntil > now;
+    public bool InTestMode() => TestMode;
+
+    public bool ShipsOn(DayOfWeek day) => ShipDays.Contains((int)day);
+
+    public string ShipDaysPolish()
+    {
+        string[] names = { "niedziele", "poniedziałki", "wtorki", "środy", "czwartki", "piątki", "soboty" };
+        var days = ShipDays.Where(d => d is >= 0 and <= 6).OrderBy(d => d == 0 ? 7 : d).Select(d => names[d]).ToList();
+        return days.Count == 0 ? "" : days.Count == 1 ? days[0] : string.Join(", ", days.Take(days.Count - 1)) + " i " + days[^1];
+    }
 
     public WorkingDay Day(DayOfWeek day) => Week[((int)day + 6) % 7];
 }

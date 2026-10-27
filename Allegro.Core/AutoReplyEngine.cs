@@ -63,9 +63,15 @@ public sealed class AutoReplyEngine
             return string.Join(" · ", parts);
         }
 
+        public string ShipDaysText = "";
+
         public string ForAi()
         {
             var sb = new System.Text.StringBuilder();
+            if (ShipDaysText.Length > 0)
+            {
+                sb.AppendLine($"DNI WYSYŁKI: paczki nadajemy w {ShipDaysText} (po zaksięgowaniu wpłaty, w najbliższy taki dzień).");
+            }
             if (HasOffer)
             {
                 sb.AppendLine($"OFERTA: {OfferName}");
@@ -293,6 +299,7 @@ public sealed class AutoReplyEngine
         try
         {
             ctx = await BuildContextAsync(thread);
+            ctx.ShipDaysText = settings.ShipDaysPolish();
             thread.OfferName = ctx.OfferName;
             if (thread.OrderId.Length == 0)
             {
@@ -349,7 +356,7 @@ public sealed class AutoReplyEngine
                 : $"confidence {thread.Confidence:0.00} below {settings.ConfidenceThreshold:0.00}";
         }
 
-        if (answer is not null && !settings.InTestMode(now))
+        if (answer is not null && !settings.InTestMode())
         {
             if (await TrySendAsync(thread, answer, settings, 2, "auto", log))
             {
@@ -661,24 +668,24 @@ public sealed class AutoReplyEngine
                     return (null, "the message does not point to an offer with a known quantity");
                 }
                 return (ctx.OfferStock > 0
-                    ? $"Dzień dobry, tak, produkt „{ctx.OfferName}” jest dostępny – mamy {ctx.OfferStock} szt. Zamówienie wysyłamy w ciągu {Days(ctx.HandlingDays)} od zaksięgowania wpłaty."
+                    ? $"Dzień dobry, tak, produkt „{ctx.OfferName}” jest dostępny – mamy {ctx.OfferStock} szt. Paczki nadajemy w {settings.ShipDaysPolish()}."
                     : $"Dzień dobry, niestety produkt „{ctx.OfferName}” jest obecnie niedostępny.", "");
 
             case MessageTopic.Shipping:
                 if (ctx.HasOrder && ctx.Shipped)
                 {
-                    return ParcelAnswer(ctx);
+                    return ParcelAnswer(ctx, settings);
                 }
                 if (ctx.HasOrder)
                 {
-                    var date = DispatchDate(ctx.PaidAt ?? ctx.BoughtAt ?? DateTime.Now, ctx.HandlingDays);
+                    var date = DispatchDate(ctx.PaidAt ?? ctx.BoughtAt ?? DateTime.Now, ctx.HandlingDays, settings);
                     return (ctx.PaidAt is null
-                        ? $"Dzień dobry, zamówienie wyślemy w ciągu {Days(ctx.HandlingDays)} od zaksięgowania wpłaty."
-                        : $"Dzień dobry, zamówienie wyślemy do {date:dd.MM.yyyy}.", "");
+                        ? $"Dzień dobry, zamówienie wyślemy w najbliższy dzień wysyłki po zaksięgowaniu wpłaty – paczki nadajemy w {settings.ShipDaysPolish()}."
+                        : $"Dzień dobry, zamówienie wyślemy {PolishOn(date)} {date:dd.MM.yyyy} – paczki nadajemy w {settings.ShipDaysPolish()}.", "");
                 }
                 if (ctx.HasOffer)
                 {
-                    return ($"Dzień dobry, zamówienie wysyłamy w ciągu {Days(ctx.HandlingDays)} od zaksięgowania wpłaty.", "");
+                    return ($"Dzień dobry, paczki nadajemy w {settings.ShipDaysPolish()}, w najbliższy taki dzień po zaksięgowaniu wpłaty.", "");
                 }
                 return (null, "no order and no offer to read the dispatch time from");
 
@@ -687,7 +694,7 @@ public sealed class AutoReplyEngine
                 {
                     return (null, "no order found for this buyer");
                 }
-                return ParcelAnswer(ctx);
+                return ParcelAnswer(ctx, settings);
 
             case MessageTopic.Invoice:
                 return (settings.InvoiceText.Length > 0 ? $"Dzień dobry, {LowerFirst(settings.InvoiceText)}" : null, "no invoice text is set");
@@ -709,7 +716,7 @@ public sealed class AutoReplyEngine
         }
     }
 
-    private static (string? Answer, string Reason) ParcelAnswer(ReplyContext ctx)
+    private static (string? Answer, string Reason) ParcelAnswer(ReplyContext ctx, AutoReplySettings settings)
     {
         if (ctx.Shipped && ctx.Waybill.Length > 0)
         {
@@ -720,11 +727,22 @@ public sealed class AutoReplyEngine
         {
             return (null, "the order is marked as sent but Allegro has no tracking number");
         }
-        var date = DispatchDate(ctx.PaidAt ?? ctx.BoughtAt ?? DateTime.Now, ctx.HandlingDays);
+        var date = DispatchDate(ctx.PaidAt ?? ctx.BoughtAt ?? DateTime.Now, ctx.HandlingDays, settings);
         return (ctx.PaidAt is null
-            ? $"Dzień dobry, zamówienie nie zostało jeszcze nadane – wyślemy je w ciągu {Days(ctx.HandlingDays)} od zaksięgowania wpłaty."
-            : $"Dzień dobry, zamówienie nie zostało jeszcze nadane – wyślemy je do {date:dd.MM.yyyy}.", "");
+            ? $"Dzień dobry, zamówienie nie zostało jeszcze nadane – wyślemy je w najbliższy dzień wysyłki po zaksięgowaniu wpłaty (paczki nadajemy w {settings.ShipDaysPolish()})."
+            : $"Dzień dobry, zamówienie nie zostało jeszcze nadane – wyślemy je {PolishOn(date)} {date:dd.MM.yyyy} (paczki nadajemy w {settings.ShipDaysPolish()}).", "");
     }
+
+    private static string PolishOn(DateTime date) => date.DayOfWeek switch
+    {
+        DayOfWeek.Monday => "w poniedziałek",
+        DayOfWeek.Tuesday => "we wtorek",
+        DayOfWeek.Wednesday => "w środę",
+        DayOfWeek.Thursday => "w czwartek",
+        DayOfWeek.Friday => "w piątek",
+        DayOfWeek.Saturday => "w sobotę",
+        _ => "w niedzielę",
+    };
 
     private async Task<string?> QuoteAsync(MessageThread thread, ReplyContext ctx, AutoReplySettings settings)
     {
@@ -776,9 +794,19 @@ public sealed class AutoReplyEngine
         _ => $"{days} dni roboczych",
     };
 
-    public static DateTime DispatchDate(DateTime from, int handlingDays)
+    public static DateTime DispatchDate(DateTime from, int handlingDays, AutoReplySettings? settings = null)
     {
         var date = from.Date;
+        if (settings is not null && settings.ShipDays.Count > 0)
+        {
+            for (int i = 1; i <= 7; i++)
+            {
+                if (settings.ShipsOn(date.AddDays(i).DayOfWeek))
+                {
+                    return date.AddDays(i);
+                }
+            }
+        }
         var left = Math.Max(handlingDays, 1);
         while (left > 0)
         {
